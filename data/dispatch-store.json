@@ -1,0 +1,471 @@
+{
+  "adminPin": "044183",
+  "isDefaultPin": false,
+  "spreadsheetId": "1OBqEpe8OA3GMVmJ964x1sAhAmxwl95gtjL81TkuCTuY",
+  "spreadsheetTitle": "CRK LOGISTIK DELIVERY SISTEM Database",
+  "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1OBqEpe8OA3GMVmJ964x1sAhAmxwl95gtjL81TkuCTuY/edit",
+  "appsScriptUrl": "",
+  "liveCsvReadable": false,
+  "driveRootFolderId": "1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
+  "driveRootFolderUrl": "https://drive.google.com/drive/folders/1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
+  "lastSyncedAt": null,
+  "lastSyncedSpreadsheetId": "1OBqEpe8OA3GMVmJ964x1sAhAmxwl95gtjL81TkuCTuY",
+  "syncedDriverIds": [],
+  "syncedVehicleIds": [],
+  "syncedRouteIds": [],
+  "syncedAssignmentNos": [],
+  "unsyncedDriverIds": [],
+  "unsyncedVehicleIds": [],
+  "unsyncedRouteIds": [],
+  "pendingMasterDeletionPush": false,
+  "pendingAssignmentDeletionPush": true,
+  "deletedTombstones": {
+    "assignments": [
+      "asg-1793341807277-1",
+      "asg-1793343367383-2",
+      "st-crk/2026/10/0001",
+      "st-crk/2026/10/0002"
+    ],
+    "drivers": [],
+    "vehicles": [],
+    "routes": []
+  },
+  "dispatcherWaPhone": "085780777715",
+  "whatsappTargetMode": "GROUP",
+  "whatsappGroupName": "Tim Pengiriman Cimol Balap",
+  "whatsappGroupInviteUrl": "https://chat.whatsapp.com/KAZTVJP9ET50OBTg9gNIy4?s=cl&p=a&mlu=4&ilr=4",
+  "publicPortalBaseUrl": "",
+  "letterPrefix": "ST-CRK",
+  "lastSequence": 0,
+  "needsMasterSheetSync": false,
+  "drivers": [
+    {
+      "id": "DRV-001",
+      "name": "REDI RAHMAN HAKIM",
+      "phone": "085780777715",
+      "pin": "4183",
+      "licenseType": "SIM B1 Umum",
+      "active": true
+    },
+    {
+      "id": "DRV-002",
+      "name": "EBI GUSTYANTO",
+      "phone": "088802223475",
+      "pin": "9090",
+      "licenseType": "SIM B1",
+      "active": true
+    },
+    {
+      "id": "DRV-003",
+      "name": "MUDI YANTO",
+      "phone": "08988946116",
+      "pin": "6116",
+      "licenseType": "SIM A",
+      "active": true
+    },
+    {
+      "id": "DRV-004",
+      "name": "TOMMY HERDIAN",
+      "phone": "089686481651",
+      "pin": "1651",
+      "licenseType": "SIM B1",
+      "active": true
+    },
+    {
+      "id": "DRV-005",
+      "name": "RAHMAT RUDIANSAH",
+      "phone": "083829984001",
+      "pin": "4001",
+      "licenseType": "SIM A",
+      "active": true
+    },
+    {
+      "id": "DRV-006",
+      "name": "DJADJANG SUPRIYADI",
+      "phone": "0881022184625",
+      "pin": "4625",
+      "licenseType": "SIM A",
+      "active": true
+    },
+    {
+      "id": "DRV-007",
+      "name": "ROBI PRIANTO",
+      "phone": "08192421654",
+      "pin": "1654",
+      "licenseType": "SIM B1",
+      "active": true
+    },
+    {
+      "id": "DRV-008",
+      "name": "DANI EKA RAMADHAN",
+      "phone": "08999484995",
+      "pin": "4995",
+      "licenseType": "SIM B1",
+      "active": true
+    },
+    {
+      "id": "DRV-009",
+      "name": "AMRULLAH MAAJID",
+      "phone": "089688066550",
+      "pin": "6550",
+      "licenseType": "SIM B1",
+      "active": true
+    },
+    {
+      "id": "DRV-010",
+      "name": "NANANG KOSIM",
+      "phone": "081271210095",
+      "pin": "0095",
+      "licenseType": "SIM B1",
+      "active": true
+    }
+  ],
+  "vehicles": [
+    {
+      "id": "UNT-001",
+      "plateNumber": "F 9088 FI",
+      "vehicleType": "CDD Mitshubishi Canter Freezer",
+      "capacity": "5.5 Ton",
+      "capacityCbm": "16 CBM",
+      "status": "Siap Jalan"
+    },
+    {
+      "id": "UNT-002",
+      "plateNumber": "F 9432 FH",
+      "vehicleType": "CDD HINO DUTRO Freezer",
+      "capacity": "5.5 Ton",
+      "capacityCbm": "16 CBM",
+      "status": "Siap Jalan"
+    },
+    {
+      "id": "UNT-003",
+      "plateNumber": "B 9436 SCP",
+      "vehicleType": "Isuzu Traga Chiller Box",
+      "capacity": "2 Ton",
+      "capacityCbm": "9 CBM",
+      "status": "Siap Jalan"
+    },
+    {
+      "id": "UNT-004",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "CDE HINO Freezer",
+      "capacity": "2 Ton",
+      "capacityCbm": "10 CBM",
+      "status": "Siap Jalan"
+    },
+    {
+      "id": "UNT-005",
+      "plateNumber": "D 8254 FV",
+      "vehicleType": "CARRY BOX Tanduk",
+      "capacity": "1.5 Ton",
+      "capacityCbm": "5.5 CBM",
+      "status": "Siap Jalan"
+    },
+    {
+      "id": "UNT-006",
+      "plateNumber": "D 8247 FW",
+      "vehicleType": "CARRY BOX Freezer",
+      "capacity": "1.5 Ton",
+      "capacityCbm": "5 CBM",
+      "status": "Siap Jalan"
+    }
+  ],
+  "routes": [
+    {
+      "id": "RT-001",
+      "destination": "DC ARCAMANIK",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-002",
+      "destination": "DP CIBIRU",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-003",
+      "destination": "DC SUKAMENAK",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-004",
+      "destination": "DP GBA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-005",
+      "destination": "DC SARIWANGI",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-006",
+      "destination": "PACKING FROZEN",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-007",
+      "destination": "DC TEBET",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-008",
+      "destination": "DC PULOGADUNG",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-009",
+      "destination": "DC DURI KEPA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-010",
+      "destination": "DC BEKASI",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-011",
+      "destination": "DC DEPOK",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-012",
+      "destination": "DC BOGOR",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-013",
+      "destination": "MTP NAROGONG",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-014",
+      "destination": "WAHANA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-015",
+      "destination": "Kios Permata Cimahi",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-016",
+      "destination": "Kios Rancaekek Kencana",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-017",
+      "destination": "Kios Ciwidey",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-018",
+      "destination": "Kios Cihampelas Cililin",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-019",
+      "destination": "Central Kitchen Tanjung Duren",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-020",
+      "destination": "Central Kitchen Tebet",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-021",
+      "destination": "Central Kitchen Sudirman",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-022",
+      "destination": "Central Kitchen Meruya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-023",
+      "destination": "Central Kitchen Rawamangun",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-024",
+      "destination": "Central Kitchen Kemang",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-025",
+      "destination": "Kios Margonda",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-026",
+      "destination": "Kios Tole Iskandar",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-027",
+      "destination": "Kios Legoso Raya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-028",
+      "destination": "Kios Cimanggis",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-029",
+      "destination": "Kios Mampang Pancoran Mas",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-030",
+      "destination": "Kios Cinere",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-031",
+      "destination": "Kios Cilodong Depok",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-032",
+      "destination": "Kios Grand Galaxy Park",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-033",
+      "destination": "Kios Mangunjaya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-034",
+      "destination": "Kios Jatimulya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-035",
+      "destination": "Central Kitchen Kelapa Gading",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-036",
+      "destination": "Central Kitchen Tendean",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-037",
+      "destination": "Kios Suryakencana",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-038",
+      "destination": "Kios Benda Raya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-039",
+      "destination": "Kios Cirendeu",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-040",
+      "destination": "Kios Jombang Raya",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-041",
+      "destination": "Kios Ceger Raya Tangsel",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-042",
+      "destination": "Kios Bosih Raya Cibitung",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-043",
+      "destination": "Kios Karang Asih",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-044",
+      "destination": "Kios Serpong Cisauk",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-045",
+      "destination": "Garuda Store GBK 2",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-046",
+      "destination": "ASTRO",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-047",
+      "destination": "Multiwarehouse Duri Kepa",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-048",
+      "destination": "WH-CISIRUNG",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-049",
+      "destination": "WH-PASIR IMPUN",
+      "picName": "",
+      "picPhone": ""
+    }
+  ],
+  "assignments": [],
+  "notifications": []
+}

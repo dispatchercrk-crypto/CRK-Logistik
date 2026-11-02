@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Portal Surat Tugas \u0026 Dispatcher",
+  "description": "Sistem manajemen surat tugas keberangkatan, serah terima armada, dan sinkronisasi data master otomatis untuk Admin Dispatcher dan Driver.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
