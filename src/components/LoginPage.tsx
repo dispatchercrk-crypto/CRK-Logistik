@@ -3,12 +3,14 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   KeyRound,
   Link2,
   LogIn,
   ShieldCheck,
   Snowflake,
   Truck,
+  Settings,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -81,6 +83,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('install') === '1';
   }, []);
+
+  const [appsScriptModalOpen, setAppsScriptModalOpen] = useState<boolean>(false);
+  const [tempGasUrl, setTempGasUrl] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('crk_gas_url') || config.appsScriptUrl || '';
+  });
 
   useEffect(() => {
     if (!driverOnlyView && isVerifiedAdminGoogleSession && !selectedDriverId) {
@@ -275,6 +283,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setAppsScriptModalOpen(true)}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-xs hover:bg-slate-100 transition-colors"
+            title="Pengaturan Backend Google Apps Script"
+          >
+            <Settings className="h-3.5 w-3.5 text-slate-500" />
+            <span className="hidden sm:inline">Backend</span>
+          </button>
           <PWAInstallButton
             compact
             showAlways
@@ -391,7 +408,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         </section>
 
         {/* Right Login Form Workspace */}
-        <section className="flex flex-col justify-center lg:col-span-6">
+        <section className="relative flex flex-col justify-center lg:col-span-6">
           <div className="mx-auto w-full max-w-lg rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs sm:p-8">
             {isDirectInstallLink && (
               <div className="mb-5">
@@ -688,15 +705,66 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </button>
               </form>
             )}
-
-            {!isDirectInstallLink && (
-              <div className="mt-5 border-t border-slate-200/90 pt-4 space-y-2">
-                <PWAInstallButton variant="store-card" showAlways />
-              </div>
-            )}
           </div>
         </section>
       </main>
+
+      {appsScriptModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">
+              ⚙️ Pengaturan Backend Google Apps Script (Live Web App)
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Masukkan URL Web App Google Apps Script Anda (<code className="font-mono text-emerald-700">.../exec</code>) agar aplikasi ini terhubung penuh secara live dengan Google Sheets tanpa batasan AI Studio.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Web App URL (.../exec)
+              </label>
+              <input
+                type="url"
+                value={tempGasUrl}
+                onChange={(e) => setTempGasUrl(e.target.value)}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              />
+            </div>
+            <div className="flex justify-between items-center pt-2">
+              <a
+                href="/Index.html"
+                download="Index.html"
+                className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                Unduh Template Index.html
+              </a>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAppsScriptModalOpen(false)}
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('crk_gas_url', tempGasUrl.trim());
+                    }
+                    setAppsScriptModalOpen(false);
+                    window.location.reload();
+                  }}
+                  className="rounded-xl bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+                >
+                  Simpan & Muat Ulang
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
