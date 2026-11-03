@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "System user information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "driver"] },
+        "displayName": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "user",
+      "description": "User profiles"
+    }
+  }
+}

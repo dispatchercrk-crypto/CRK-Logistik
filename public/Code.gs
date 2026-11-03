@@ -3,6 +3,32 @@
  * Salin seluruh kode ini ke editor Apps Script Anda.
  */
 
+var TAB_HEADERS = {
+  Surat_Tugas: [
+    'ID Internal', 'Urutan', 'No Penugasan', 'No Surat Jalan Fisik', 'Kode Segel',
+    'Tanggal Tugas', 'ID Driver', 'Nama Driver', 'No WA Driver', 'Kode Unit',
+    'No Polisi', 'Tipe Kendaraan', 'Jenis Armada (Pendingin/Non)', 'Titik Keberangkatan Driver',
+    'Kode Rute', 'Lokasi Tujuan', 'Muatan Pengiriman', 'Status', 'Timestamp Berangkat',
+    'KM Awal', 'Suhu Awal', 'BBM Awal', 'Kondisi Berangkat', 'Catatan Berangkat',
+    'Status Foto Berangkat', 'Timestamp Serah Terima', 'KM Akhir', 'Suhu Serah Terima',
+    'BBM Akhir', 'Penerima Serah Terima', 'Kondisi Akhir', 'Catatan Serah Terima',
+    'Status Foto & TTD Serah Terima', 'Catatan Dispatcher', 'Dibuat Pada', 'Target Jam Tiba',
+    'Berat Muatan', 'Link Folder Google Drive', 'Link Foto Odometer Keberangkatan',
+    'Link Foto Suhu Keberangkatan', 'Link Foto Odometer Serah Terima', 'Link Foto Suhu Serah Terima',
+    'Link Foto Bukti Serah Terima', 'Link Tanda Tangan Penerima', 'Waktu Tiba (Delivered)', 'Volume Muatan (CBM)'
+  ],
+  Master_Driver: ['ID Driver', 'Nama Driver', 'No WhatsApp', 'PIN Login', 'Jenis SIM', 'Status Aktif'],
+  Master_Armada: ['Kode Unit', 'No Polisi', 'Tipe Kendaraan', 'Kapasitas', 'Status Unit', 'Kapasitas CBM'],
+  Master_Rute: ['Kode Rute', 'Lokasi Tujuan', 'Nama PIC Tujuan', 'No WA PIC Tujuan'],
+  Master_Fleet_Card: ['ID Fleet Card', 'Nomor Kartu Fleet Card', 'Saldo Fleet Card'],
+  Pengeluaran_Driver: [
+    'ID Pengeluaran', 'Timestamp Otomatis', 'Tanggal', 'ID Driver', 'Nama Driver',
+    'No Polisi', 'No Surat Tugas Selesai', 'ID Fleet Card', 'Nomor Kartu Fleet Card',
+    'Total Pembelian BBM', 'Link Foto Struk BBM', 'Total Pengeluaran Tol', 'Link Foto Struk Tol',
+    'Total Pengeluaran', 'Catatan', 'Tanggal Pengiriman', 'Tujuan Pengiriman'
+  ]
+};
+
 function doGet(e) {
   const action = e && e.parameter ? e.parameter.action : '';
   if (action === 'getData') {
@@ -23,26 +49,42 @@ function doPost(e) {
     const action = payload.action;
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    if (action === 'createAssignment') {
+      const sheet = getOrCreateSheet_(ss, 'Surat_Tugas', TAB_HEADERS['Surat_Tugas']);
+      sheet.appendRow([
+        'ASG-' + Date.now(),
+        1,
+        payload.noPenugasan,
+        '-', '-',
+        Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd'),
+        '-',
+        payload.driverName,
+        '-', '-',
+        payload.plateNumber,
+        '-', '-', '-', '-',
+        payload.destination,
+        '-', 'Menunggu Berangkat'
+      ]);
+      return ContentService.createTextOutput(
+        JSON.stringify({ success: true, state: getAllAppData_() })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === 'updateAssignmentStatus') {
       const id = payload.id;
       const status = payload.status;
-      const sheet = getOrCreateSheet_(ss, 'Surat_Tugas', [
-        'ID Internal', 'Urutan', 'No Penugasan', 'No Surat Jalan Fisik', 'Kode Segel',
-        'Tanggal Tugas', 'ID Driver', 'Nama Driver', 'No WA Driver', 'Kode Unit',
-        'No Polisi', 'Tipe Kendaraan', 'Jenis Armada (Pendingin/Non)', 'Titik Keberangkatan Driver',
-        'Kode Rute', 'Lokasi Tujuan', 'Muatan Pengiriman', 'Status', 'Timestamp Berangkat',
-        'KM Awal', 'Suhu Awal', 'BBM Awal', 'Kondisi Berangkat', 'Catatan Berangkat',
-        'Status Foto Berangkat', 'Timestamp Serah Terima', 'KM Akhir', 'Suhu Serah Terima',
-        'BBM Akhir', 'Penerima Serah Terima', 'Kondisi Akhir', 'Catatan Serah Terima',
-        'Status Foto & TTD Serah Terima', 'Catatan Dispatcher', 'Dibuat Pada', 'Target Jam Tiba',
-        'Berat Muatan', 'Link Folder Google Drive', 'Link Foto Odometer Keberangkatan',
-        'Link Foto Suhu Keberangkatan', 'Link Foto Odometer Serah Terima', 'Link Foto Suhu Serah Terima',
-        'Link Foto Bukti Serah Terima', 'Link Tanda Tangan Penerima', 'Waktu Tiba (Delivered)', 'Volume Muatan (CBM)'
-      ]);
+      const sheet = getOrCreateSheet_(ss, 'Surat_Tugas', TAB_HEADERS['Surat_Tugas']);
       const rows = sheet.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
         if (String(rows[i][0]) === String(id)) {
-          sheet.getRange(i + 1, 18).setValue(status); // Column 18 is Status
+          // Status (col 18)
+          sheet.getRange(i + 1, 18).setValue(status);
+          // Assuming KM/Suhu fields based on header order
+          if (payload.km) sheet.getRange(i + 1, 20).setValue(payload.km); // Col 20: KM Awal/Akhir
+          if (payload.suhu) sheet.getRange(i + 1, 21).setValue(payload.suhu); // Col 21: Suhu
+          if (payload.catatan) sheet.getRange(i + 1, 24).setValue(payload.catatan); // Col 24: Catatan
+
+          // Handle photos if needed (would require saving to Drive, simplified for now)
           break;
         }
       }
