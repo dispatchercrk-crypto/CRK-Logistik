@@ -32,12 +32,18 @@ export interface EmbeddedTaskSnapshot {
   ownerUid?: string;
 }
 
+export interface EmbeddedConfigSnapshot {
+  spreadsheetId?: string;
+  appsScriptUrl?: string;
+}
+
 export interface ParsedDriverLinkParams {
   isDriverMode: boolean;
   driverId: string;
   taskKey: string;
   embeddedDriver?: EmbeddedDriverSnapshot;
   embeddedTask?: EmbeddedTaskSnapshot;
+  embeddedConfig?: EmbeddedConfigSnapshot;
 }
 
 function encodeUrlSafeBase64(obj: unknown): string {
@@ -96,6 +102,20 @@ export interface DriverLinkProbeStatus {
 let cachedVerifiedBaseUrl = '';
 let cachedCustomPortalBaseUrl = '';
 let cachedIsShareReady = false;
+let cachedEmbeddedSheetId = '';
+let cachedEmbeddedAppsScriptUrl = '';
+
+export function setEmbeddedSheetConfigSnapshot(
+  spreadsheetId?: string,
+  appsScriptUrl?: string
+): void {
+  if (typeof spreadsheetId === 'string') {
+    cachedEmbeddedSheetId = spreadsheetId.trim();
+  }
+  if (typeof appsScriptUrl === 'string') {
+    cachedEmbeddedAppsScriptUrl = appsScriptUrl.trim();
+  }
+}
 
 /**
  * Normalizes any candidate base URL to a clean root origin URL ending with `/`
@@ -251,6 +271,7 @@ export function buildDriverPortalLink(options?: {
   customBaseUrl?: string;
   driverSnapshot?: Pick<DriverMaster, 'id' | 'name' | 'phone' | 'licenseType'>;
   taskSnapshot?: Assignment;
+  configSnapshot?: EmbeddedConfigSnapshot;
 }): string {
   const base = getShareableBaseUrl(options?.customBaseUrl);
   if (!base) return '';
@@ -267,12 +288,25 @@ export function buildDriverPortalLink(options?: {
     params.set('task', safeTaskKey);
   }
 
-  if (options?.driverSnapshot || options?.taskSnapshot) {
+  const effSheetId = (
+    options?.configSnapshot?.spreadsheetId ?? cachedEmbeddedSheetId
+  ).trim();
+  const effBridgeUrl = (
+    options?.configSnapshot?.appsScriptUrl ?? cachedEmbeddedAppsScriptUrl
+  ).trim();
+
+  if (
+    options?.driverSnapshot ||
+    options?.taskSnapshot ||
+    effSheetId ||
+    effBridgeUrl
+  ) {
     const compactPayload: {
       d?: EmbeddedDriverSnapshot;
       t?: EmbeddedTaskSnapshot;
+      c?: { s?: string; a?: string };
     } = {};
-    if (options.driverSnapshot) {
+    if (options?.driverSnapshot) {
       compactPayload.d = {
         id: options.driverSnapshot.id,
         name: options.driverSnapshot.name,
@@ -280,7 +314,7 @@ export function buildDriverPortalLink(options?: {
         licenseType: options.driverSnapshot.licenseType || '',
       };
     }
-    if (options.taskSnapshot) {
+    if (options?.taskSnapshot) {
       const ts = options.taskSnapshot;
       compactPayload.t = {
         id: ts.id,
@@ -306,8 +340,14 @@ export function buildDriverPortalLink(options?: {
         ownerUid: ts.ownerUid || undefined,
       };
     }
+    if (effSheetId || effBridgeUrl) {
+      compactPayload.c = {
+        ...(effSheetId ? { s: effSheetId } : {}),
+        ...(effBridgeUrl ? { a: effBridgeUrl } : {}),
+      };
+    }
     const snapStr = encodeUrlSafeBase64(compactPayload);
-    if (snapStr && snapStr.length <= 1600) {
+    if (snapStr && snapStr.length <= 2000) {
       params.set('snap', snapStr);
     }
   }
@@ -354,10 +394,19 @@ export function parseDriverUrlParams(): ParsedDriverLinkParams {
     ? decodeUrlSafeBase64<{
         d?: EmbeddedDriverSnapshot;
         t?: EmbeddedTaskSnapshot;
+        c?: { s?: string; a?: string };
       }>(snapRaw)
     : null;
 
   const pathIsDriver = /^\/driver(\/|$)/i.test(window.location.pathname);
+
+  const embeddedConfig: EmbeddedConfigSnapshot | undefined =
+    decodedSnap?.c && (decodedSnap.c.s || decodedSnap.c.a)
+      ? {
+          spreadsheetId: decodedSnap.c.s?.trim() || undefined,
+          appsScriptUrl: decodedSnap.c.a?.trim() || undefined,
+        }
+      : undefined;
 
   return {
     isDriverMode:
@@ -370,6 +419,7 @@ export function parseDriverUrlParams(): ParsedDriverLinkParams {
     taskKey: taskKey || decodedSnap?.t?.id || decodedSnap?.t?.noPenugasan || '',
     embeddedDriver: decodedSnap?.d,
     embeddedTask: decodedSnap?.t,
+    embeddedConfig,
   };
 }
 

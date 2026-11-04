@@ -161,7 +161,8 @@ export function isAiStudioHibernationHtml(rawText: string): boolean {
 export async function safeApiFetch<T = Record<string, unknown>>(
   url: string,
   init: RequestInit = {},
-  maxHtmlRetries = 2
+  maxHtmlRetries = 2,
+  timeoutMs = 14000
 ): Promise<SafeApiResult<T>> {
   let lastResult: SafeApiResult<T> | null = null;
 
@@ -169,6 +170,21 @@ export async function safeApiFetch<T = Record<string, unknown>>(
     if (attempt > 0) {
       await waitExponentialBackoff(attempt - 1, 450, 2500);
     }
+
+    const controller =
+      typeof AbortController !== 'undefined' && !init.signal
+        ? new AbortController()
+        : null;
+    const timeoutId =
+      controller && timeoutMs > 0
+        ? setTimeout(() => {
+            try {
+              controller.abort();
+            } catch {
+              // Ignore
+            }
+          }, timeoutMs)
+        : null;
 
     try {
       const headers = new Headers(init.headers || {});
@@ -179,12 +195,14 @@ export async function safeApiFetch<T = Record<string, unknown>>(
       const res = await fetch(url, {
         ...init,
         headers,
+        signal: init.signal ?? controller?.signal,
         cache: init.cache ?? 'no-store',
         credentials: init.credentials ?? 'same-origin',
       });
 
       const contentType = res.headers.get('content-type');
       const rawText = await res.text();
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (looksLikeHtmlPayload(rawText, contentType)) {
         const isHibernating = isAiStudioHibernationHtml(rawText);
@@ -247,6 +265,7 @@ export async function safeApiFetch<T = Record<string, unknown>>(
         return lastResult;
       }
     } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
       if (isHtmlOrMobileProxyError(err) && attempt < maxHtmlRetries) {
         lastResult = {
           ok: false,
@@ -511,17 +530,34 @@ export function mergePulledSheetsIntoLocalState(
       needsSheetSync: true,
     }));
   } else {
+    const clientStatusRank = (s?: string): number => {
+      if (s === 'Handover' || s === 'Selesai') return 3;
+      if (s === 'Delivered') return 2;
+      if (s === 'Dalam Perjalanan') return 1;
+      return 0;
+    };
+
     const localByNo = new Map<string, Assignment>();
     for (const localItem of currentState.assignments) {
-      localByNo.set(localItem.noPenugasan, localItem);
+      localByNo.set(localItem.noPenugasan.trim().toLowerCase(), localItem);
     }
 
     const usedLocalNos = new Set<string>();
     const merged: Assignment[] = pulled.assignments.map((sheetItem) => {
-      const existingLocal = localByNo.get(sheetItem.noPenugasan);
+      const normSheetNo = sheetItem.noPenugasan.trim().toLowerCase();
+      const existingLocal = localByNo.get(normSheetNo);
       if (existingLocal) {
-        usedLocalNos.add(sheetItem.noPenugasan);
-        if (existingLocal.needsSheetSync) {
+        usedLocalNos.add(normSheetNo);
+        const localProgressedAheadOfSheet =
+          clientStatusRank(existingLocal.status) >
+            clientStatusRank(sheetItem.status) ||
+          (Boolean(existingLocal.departureData?.timestamp) &&
+            !sheetItem.departureData?.timestamp) ||
+          (Boolean(existingLocal.handoverData?.timestamp) &&
+            !sheetItem.handoverData?.timestamp) ||
+          (Boolean(existingLocal.deliveredAt) && !sheetItem.deliveredAt);
+
+        if (existingLocal.needsSheetSync || localProgressedAheadOfSheet) {
           hasPendingDriverUpdates = true;
           const mergedPendingDrive = mergeDriveMediaClient(
             existingLocal.driveMedia,
@@ -534,6 +570,7 @@ export function mergePulledSheetsIntoLocalState(
               existingLocal.driveFolderUrl ||
               sheetItem.driveFolderUrl,
             driveMedia: mergedPendingDrive,
+            needsSheetSync: true,
           };
         }
 
@@ -578,13 +615,25 @@ export function mergePulledSheetsIntoLocalState(
                   existingLocal.departureData?.fotoSuhuBerangkat,
               }
             : existingLocal.departureData,
+          deliveredData: sheetItem.deliveredData
+            ? {
+                ...existingLocal.deliveredData,
+                ...sheetItem.deliveredData,
+                fotoOdometerSampai:
+                  existingLocal.deliveredData?.fotoOdometerSampai,
+                fotoSuhuSampai:
+                  existingLocal.deliveredData?.fotoSuhuSampai,
+              }
+            : existingLocal.deliveredData,
           handoverData: sheetItem.handoverData
             ? {
                 ...sheetItem.handoverData,
                 fotoOdometerSerahTerima:
-                  existingLocal.handoverData?.fotoOdometerSerahTerima,
+                  existingLocal.handoverData?.fotoOdometerSerahTerima ||
+                  existingLocal.deliveredData?.fotoOdometerSampai,
                 fotoSuhuSerahTerima:
-                  existingLocal.handoverData?.fotoSuhuSerahTerima,
+                  existingLocal.handoverData?.fotoSuhuSerahTerima ||
+                  existingLocal.deliveredData?.fotoSuhuSampai,
                 fotoBuktiSerahTerima:
                   existingLocal.handoverData?.fotoBuktiSerahTerima,
                 tandaTanganPenerima:
@@ -605,7 +654,10 @@ export function mergePulledSheetsIntoLocalState(
       if (!usedLocalNos.has(noKey)) {
         if (!forceReplaceAll && localItem.needsSheetSync) {
           hasPendingDriverUpdates = true;
-          merged.push(localItem);
+          merged.push({
+            ...localItem,
+            needsSheetSync: true,
+          });
         } else {
           hasSheetDeletionsToPrune = true;
         }
@@ -789,16 +841,30 @@ export function mergeFirestoreIntoLocalState(
                 loc.departureData?.fotoSuhuBerangkat,
             }
           : loc.departureData,
+        deliveredData: ca.deliveredData
+          ? {
+              ...loc.deliveredData,
+              ...ca.deliveredData,
+              fotoOdometerSampai:
+                ca.deliveredData.fotoOdometerSampai ||
+                loc.deliveredData?.fotoOdometerSampai,
+              fotoSuhuSampai:
+                ca.deliveredData.fotoSuhuSampai ||
+                loc.deliveredData?.fotoSuhuSampai,
+            }
+          : loc.deliveredData,
         handoverData: ca.handoverData
           ? {
               ...loc.handoverData,
               ...ca.handoverData,
               fotoOdometerSerahTerima:
                 ca.handoverData.fotoOdometerSerahTerima ||
-                loc.handoverData?.fotoOdometerSerahTerima,
+                loc.handoverData?.fotoOdometerSerahTerima ||
+                loc.deliveredData?.fotoOdometerSampai,
               fotoSuhuSerahTerima:
                 ca.handoverData.fotoSuhuSerahTerima ||
-                loc.handoverData?.fotoSuhuSerahTerima,
+                loc.handoverData?.fotoSuhuSerahTerima ||
+                loc.deliveredData?.fotoSuhuSampai,
               fotoBuktiSerahTerima:
                 ca.handoverData.fotoBuktiSerahTerima ||
                 loc.handoverData?.fotoBuktiSerahTerima,

@@ -76,6 +76,14 @@ export interface DriverFormDraft {
   catatanBerangkat?: string;
   fotoOdometerBerangkat?: string;
   fotoSuhuBerangkat?: string;
+  deliveredJenisKendaraan?: 'Mobil Pendingin' | 'Non Pendingin';
+  kmSampai?: string;
+  suhuSampai?: string;
+  bbmSampai?: string;
+  kondisiSampai?: string;
+  catatanSampai?: string;
+  fotoOdometerSampai?: string;
+  fotoSuhuSampai?: string;
   handoverJenisKendaraan?: 'Mobil Pendingin' | 'Non Pendingin';
   kmAkhir?: string;
   suhuAkhir?: string;
@@ -592,15 +600,35 @@ export async function saveFullWorkspaceToVault(
           : prev.departureData && asg.status !== 'Menunggu Berangkat'
           ? prev.departureData
           : asg.departureData,
+        deliveredData: asg.deliveredData
+          ? {
+              ...asg.deliveredData,
+              fotoOdometerSampai:
+                asg.deliveredData.fotoOdometerSampai ||
+                prev.deliveredData?.fotoOdometerSampai,
+              fotoSuhuSampai:
+                asg.deliveredData.fotoSuhuSampai ||
+                prev.deliveredData?.fotoSuhuSampai,
+            }
+          : prev.deliveredData &&
+            (asg.status === 'Delivered' ||
+              asg.status === 'Handover' ||
+              asg.status === 'Selesai')
+          ? prev.deliveredData
+          : asg.deliveredData,
         handoverData: asg.handoverData
           ? {
               ...asg.handoverData,
               fotoOdometerSerahTerima:
                 asg.handoverData.fotoOdometerSerahTerima ||
-                prev.handoverData?.fotoOdometerSerahTerima,
+                prev.handoverData?.fotoOdometerSerahTerima ||
+                asg.deliveredData?.fotoOdometerSampai ||
+                prev.deliveredData?.fotoOdometerSampai,
               fotoSuhuSerahTerima:
                 asg.handoverData.fotoSuhuSerahTerima ||
-                prev.handoverData?.fotoSuhuSerahTerima,
+                prev.handoverData?.fotoSuhuSerahTerima ||
+                asg.deliveredData?.fotoSuhuSampai ||
+                prev.deliveredData?.fotoSuhuSampai,
               fotoBuktiSerahTerima:
                 asg.handoverData.fotoBuktiSerahTerima ||
                 prev.handoverData?.fotoBuktiSerahTerima,
@@ -651,13 +679,17 @@ export async function readFullWorkspaceFromVault(): Promise<AppStateResponse | n
  */
 export async function readCachedAssignmentMediaFromVault(
   assignmentId: string
-): Promise<Pick<Assignment, 'departureData' | 'handoverData'> | null> {
+): Promise<Pick<
+  Assignment,
+  'departureData' | 'deliveredData' | 'handoverData'
+> | null> {
   const ws = await idbGet<AppStateResponse>(KEY_WORKSPACE);
   if (!ws || !Array.isArray(ws.assignments)) return null;
   const found = ws.assignments.find((a) => a.id === assignmentId);
   if (!found) return null;
   return {
     departureData: found.departureData,
+    deliveredData: found.deliveredData,
     handoverData: found.handoverData,
   };
 }
@@ -670,6 +702,13 @@ function stripHeavyPhotosFromAssignment(a: Assignment): Assignment {
           ...a.departureData,
           fotoOdometerBerangkat: undefined,
           fotoSuhuBerangkat: undefined,
+        }
+      : undefined,
+    deliveredData: a.deliveredData
+      ? {
+          ...a.deliveredData,
+          fotoOdometerSampai: undefined,
+          fotoSuhuSampai: undefined,
         }
       : undefined,
     handoverData: a.handoverData
@@ -802,6 +841,7 @@ export async function resolveCachedSuratTugasAsli(
         ...liveTask,
         ownerUid: liveTask.ownerUid || cachedTask?.ownerUid,
         departureData: liveTask.departureData || cachedTask?.departureData,
+        deliveredData: liveTask.deliveredData || cachedTask?.deliveredData,
         handoverData: liveTask.handoverData || cachedTask?.handoverData,
         driveMedia: liveTask.driveMedia || cachedTask?.driveMedia,
         driveFolderUrl: liveTask.driveFolderUrl || cachedTask?.driveFolderUrl,
@@ -956,6 +996,8 @@ export async function clearDriverFormDraft(
 export interface PendingSyncPhotoBundle {
   fotoOdometerBerangkat?: string;
   fotoSuhuBerangkat?: string;
+  fotoOdometerSampai?: string;
+  fotoSuhuSampai?: string;
   fotoOdometerSerahTerima?: string;
   fotoSuhuSerahTerima?: string;
   fotoBuktiSerahTerima?: string;
@@ -1340,17 +1382,14 @@ export function runCleanStartAssignmentPurgeOnce(): boolean {
   );
 
   try {
-    if (window.localStorage.getItem(CLEAN_START_MARKER) === '1') {
-      return false;
-    }
     window.localStorage.setItem(CLEAN_START_MARKER, '1');
-    window.localStorage.setItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY, '1');
+    // Clear any stuck cloud/server purge flag so refreshing never wipes Surat Tugas
+    window.localStorage.removeItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY);
   } catch {
-    return false;
+    // Ignore storage quota errors
   }
 
-  void purgeAssignmentsClientCacheOnly();
-  return true;
+  return false;
 }
 
 function isCompletedOlderThanMs(
@@ -1365,7 +1404,7 @@ function isCompletedOlderThanMs(
   const isCompleted =
     statusNorm === 'handover' ||
     statusNorm === 'selesai' ||
-    Boolean(asg.handoverData);
+    Boolean(asg.handoverData?.penerimaNama);
   if (!isCompleted) return false;
 
   const candidateTs =

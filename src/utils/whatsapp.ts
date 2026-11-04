@@ -111,13 +111,23 @@ export function buildDriverRealtimeWaMessage(
   };
 
   const dep = asg.departureData;
+  const deliv = asg.deliveredData;
   const ho = asg.handoverData;
-  const jenisKendaraan = dep?.jenisKendaraan || 'Mobil Pendingin';
+  const jenisKendaraan =
+    deliv?.jenisKendaraan || dep?.jenisKendaraan || 'Mobil Pendingin';
   const isPendingin = jenisKendaraan !== 'Non Pendingin';
   const titikBerangkat =
     dep?.titikKeberangkatan || asg.origin || 'Menunggu Input Driver';
+  const effectiveEndKm =
+    typeof ho?.kmAkhir === 'number' && ho.kmAkhir >= 0
+      ? ho.kmAkhir
+      : typeof deliv?.kmSampai === 'number' && deliv.kmSampai >= 0
+      ? deliv.kmSampai
+      : null;
   const kmDelta =
-    dep && ho && ho.kmAkhir >= dep.kmAwal ? ho.kmAkhir - dep.kmAwal : null;
+    dep && effectiveEndKm !== null && effectiveEndKm >= dep.kmAwal
+      ? effectiveEndKm - dep.kmAwal
+      : null;
   const sjList = parseSuratJalanList(asg.noSuratJalanFisik);
 
   const departureLines = dep
@@ -132,10 +142,18 @@ export function buildDriverRealtimeWaMessage(
         `Kondisi Unit : ${dep.kondisiKendaraan || '-'}`,
         isPendingin
           ? `Foto Berangkat : Odometer (${
-              dep.fotoOdometerBerangkat ? 'Ada' : '-'
-            }), Monitor Pendingin (${dep.fotoSuhuBerangkat ? 'Ada' : '-'})`
+              dep.fotoOdometerBerangkat || asg.driveMedia?.fotoOdometerBerangkatUrl
+                ? 'Ada'
+                : '-'
+            }), Monitor Pendingin (${
+              dep.fotoSuhuBerangkat || asg.driveMedia?.fotoSuhuBerangkatUrl
+                ? 'Ada'
+                : '-'
+            })`
           : `Foto Berangkat : Odometer (${
-              dep.fotoOdometerBerangkat ? 'Ada' : '-'
+              dep.fotoOdometerBerangkat || asg.driveMedia?.fotoOdometerBerangkatUrl
+                ? 'Ada'
+                : '-'
             })`,
         dep.catatanBerangkat
           ? `Catatan Berangkat : ${dep.catatanBerangkat}`
@@ -146,48 +164,86 @@ export function buildDriverRealtimeWaMessage(
         'Status Keberangkatan : Menunggu pengisian laporan keberangkatan Driver',
       ];
 
-  const handoverLines = ho
+  const hasDeliveredInfo =
+    Boolean(deliv) ||
+    Boolean(asg.deliveredAt) ||
+    asg.status === TaskStatus.DELIVERED ||
+    isCompletedTaskStatus(asg.status);
+  const resolvedKmSampai =
+    deliv?.kmSampai ?? (ho ? ho.kmAkhir : null);
+  const resolvedSuhuSampai =
+    deliv?.suhuSampai || ho?.suhuAkhir || '';
+  const resolvedBbmSampai =
+    deliv?.bbmSampai || ho?.bbmAkhir || '';
+  const resolvedKondisiSampai =
+    deliv?.kondisiSampai || ho?.kondisiAkhir || '';
+  const hasOdoSampaiFoto = Boolean(
+    deliv?.fotoOdometerSampai ||
+      ho?.fotoOdometerSerahTerima ||
+      asg.driveMedia?.fotoOdometerSerahTerimaUrl
+  );
+  const hasSuhuSampaiFoto = Boolean(
+    deliv?.fotoSuhuSampai ||
+      ho?.fotoSuhuSerahTerima ||
+      asg.driveMedia?.fotoSuhuSerahTerimaUrl
+  );
+
+  const deliveredLines = hasDeliveredInfo
     ? [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        `Waktu Serah Terima : ${formatRealTimeTimestamp(ho.timestamp)}`,
-        `Odometer Akhir : ${ho.kmAkhir.toLocaleString('id-ID')} km${
-          kmDelta !== null
-            ? ` (Jarak Tempuh: ${kmDelta.toLocaleString('id-ID')} km)`
-            : ''
-        }`,
-        isPendingin ? `Suhu Monitor Akhir : ${ho.suhuAkhir || '-'}` : '',
-        `BBM Akhir : ${ho.bbmAkhir || '-'}`,
-        `Nama Penerima : ${ho.penerimaNama || '-'}`,
-        `Kondisi Akhir : ${ho.kondisiAkhir || '-'}`,
-        isPendingin
-          ? `Bukti & TTD : Odometer (${
-              ho.fotoOdometerSerahTerima ? 'Ada' : '-'
-            }), Monitor Pendingin (${
-              ho.fotoSuhuSerahTerima ? 'Ada' : '-'
-            }), Bukti (${ho.fotoBuktiSerahTerima ? 'Ada' : '-'}), TTD (${
-              ho.tandaTanganPenerima ? 'Tersimpan' : '-'
-            })`
-          : `Bukti & TTD : Odometer (${
-              ho.fotoOdometerSerahTerima ? 'Ada' : '-'
-            }), Bukti (${ho.fotoBuktiSerahTerima ? 'Ada' : '-'}), TTD (${
-              ho.tandaTanganPenerima ? 'Tersimpan' : '-'
-            })`,
-        ho.catatanSerahTerima
-          ? `Catatan Serah Terima : ${ho.catatanSerahTerima}`
-          : '',
-      ]
-    : asg.status === 'Delivered'
-    ? [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        `Waktu Tiba (Delivered) : ${formatRealTimeTimestamp(
-          asg.deliveredAt || nowDate
+        '*--- DATA DELIVERED (SAMPAI DI TUJUAN) ---*',
+        `Waktu Sampai (Delivered) : ${formatRealTimeTimestamp(
+          deliv?.timestamp || asg.deliveredAt || ho?.timestamp || nowDate
         )}`,
-        'Status Serah Terima : Armada telah tiba di tujuan (Delivered) — siap proses berita acara Handover',
+        resolvedKmSampai !== null && resolvedKmSampai >= 0
+          ? `Odometer KM Sampai : ${resolvedKmSampai.toLocaleString('id-ID')} km${
+              kmDelta !== null
+                ? ` (Jarak Tempuh: ${kmDelta.toLocaleString('id-ID')} km)`
+                : ''
+            }`
+          : '',
+        isPendingin ? `Suhu Serah Sampai : ${resolvedSuhuSampai || '-'}` : '',
+        resolvedBbmSampai ? `Posisi BBM Sampai : ${resolvedBbmSampai}` : '',
+        resolvedKondisiSampai
+          ? `Kondisi Muatan & Segel Sampai : ${resolvedKondisiSampai}`
+          : '',
+        isPendingin
+          ? `Foto Sampai : Odometer (${
+              hasOdoSampaiFoto ? 'Ada' : '-'
+            }), Monitor Pendingin (${hasSuhuSampaiFoto ? 'Ada' : '-'})`
+          : `Foto Sampai : Odometer (${hasOdoSampaiFoto ? 'Ada' : '-'})`,
+        deliv?.catatanSampai ? `Catatan Sampai : ${deliv.catatanSampai}` : '',
       ]
-    : [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        'Status Serah Terima : Menunggu penyelesaian perjalanan & berita acara serah terima',
-      ];
+    : [];
+
+  const handoverLines =
+    ho && (isCompletedTaskStatus(asg.status) || Boolean(ho.penerimaNama))
+      ? [
+          '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+          `Waktu Serah Terima : ${formatRealTimeTimestamp(ho.timestamp)}`,
+          `Nama Penerima Serah Terima : ${ho.penerimaNama || '-'}`,
+          `Foto Bukti Serah Terima : ${
+            ho.fotoBuktiSerahTerima || asg.driveMedia?.fotoBuktiSerahTerimaUrl
+              ? 'Ada'
+              : '-'
+          }`,
+          `Tanda Tangan Penerima : ${
+            ho.tandaTanganPenerima || asg.driveMedia?.tandaTanganPenerimaUrl
+              ? 'Tersimpan'
+              : '-'
+          }`,
+          ho.catatanSerahTerima
+            ? `Catatan Serah Terima : ${ho.catatanSerahTerima}`
+            : '',
+        ]
+      : asg.status === TaskStatus.DELIVERED || Boolean(deliv)
+      ? [
+          '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+          'Status Serah Terima : Armada telah sampai di tujuan (Delivered) — menunggu pengisian Berita Acara Serah Terima',
+        ]
+      : [
+          '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+          'Status Serah Terima : Menunggu armada tiba di tujuan & berita acara serah terima',
+        ];
 
   const sjLine =
     sjList.length > 1
@@ -226,6 +282,7 @@ export function buildDriverRealtimeWaMessage(
     asg.notes ? `Instruksi Dispatcher : ${asg.notes}` : '',
     '',
     ...departureLines,
+    ...(deliveredLines.length > 0 ? ['', ...deliveredLines] : []),
     '',
     ...handoverLines,
   ]
@@ -238,13 +295,16 @@ export function buildDriverRealtimeWaMessage(
 }
 
 export function inferWhatsAppEventType(asg: Assignment): WhatsAppEventType {
-  return asg.handoverData
-    ? 'SERAH_TERIMA'
-    : asg.status === 'Delivered'
-    ? 'DELIVERED'
-    : asg.departureData
-    ? 'KEBERANGKATAN'
-    : 'SURAT_TUGAS';
+  if (isCompletedTaskStatus(asg.status) || Boolean(asg.handoverData?.penerimaNama)) {
+    return 'SERAH_TERIMA';
+  }
+  if (asg.status === TaskStatus.DELIVERED || Boolean(asg.deliveredData)) {
+    return 'DELIVERED';
+  }
+  if (asg.departureData) {
+    return 'KEBERANGKATAN';
+  }
+  return 'SURAT_TUGAS';
 }
 
 export function buildSuratTugasWaMessage(
@@ -323,20 +383,57 @@ export function resolveWhatsAppUrlForMode(
  * Triggers opening a WhatsApp URL in 1 click using a temporary semantic <a> element
  * (strictly avoiding window.open for iframe compatibility).
  */
-export function launchWhatsAppUrl(url: string): void {
-  if (!url || typeof document === 'undefined') return;
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.target = '_blank';
-  anchor.rel = 'noopener noreferrer';
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  setTimeout(() => {
-    if (anchor.parentNode) {
-      anchor.parentNode.removeChild(anchor);
+export function launchWhatsAppUrl(url: string): boolean {
+  if (!url || typeof document === 'undefined' || typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    const isInsideIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch {
+        return true;
+      }
+    })();
+    const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(
+      window.navigator?.userAgent || ''
+    );
+    const navWithActivation = window.navigator as Navigator & {
+      userActivation?: { isActive?: boolean };
+    };
+    const hasActiveGesture =
+      typeof navWithActivation?.userActivation?.isActive === 'boolean'
+        ? Boolean(navWithActivation.userActivation.isActive)
+        : true;
+
+    // On standalone mobile browsers/PWAs (outside iframes), async awaits expire transient user activation
+    // causing target="_blank" to be silently blocked by mobile popup blockers. Navigating directly to
+    // https://wa.me/... triggers the native WhatsApp App via OS Intent/Universal Link without losing tab state.
+    if (!isInsideIframe && isMobileDevice && !hasActiveGesture) {
+      window.location.assign(url);
+      return true;
     }
-  }, 200);
+
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      try {
+        if (anchor.parentNode) {
+          anchor.parentNode.removeChild(anchor);
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+    }, 250);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ============================================================================
@@ -516,7 +613,9 @@ export function resolveAssignmentStatusTimeline(
 
   const otd = evaluateAssignmentOtd(asg);
   const jenisKendaraan =
-    asg.departureData?.jenisKendaraan || 'Mobil Pendingin';
+    asg.deliveredData?.jenisKendaraan ||
+    asg.departureData?.jenisKendaraan ||
+    'Mobil Pendingin';
   const isPendingin = jenisKendaraan !== 'Non Pendingin';
   const titikBerangkat =
     asg.departureData?.titikKeberangkatan ||
@@ -524,11 +623,20 @@ export function resolveAssignmentStatusTimeline(
       ? asg.origin
       : 'Menunggu Input Driver');
 
+  const endKmValue =
+    typeof asg.handoverData?.kmAkhir === 'number' &&
+    asg.handoverData.kmAkhir >= 0
+      ? asg.handoverData.kmAkhir
+      : typeof asg.deliveredData?.kmSampai === 'number' &&
+        asg.deliveredData.kmSampai >= 0
+      ? asg.deliveredData.kmSampai
+      : null;
+
   const kmDelta =
     asg.departureData &&
-    asg.handoverData &&
-    asg.handoverData.kmAkhir >= asg.departureData.kmAwal
-      ? asg.handoverData.kmAkhir - asg.departureData.kmAwal
+    endKmValue !== null &&
+    endKmValue >= asg.departureData.kmAwal
+      ? endKmValue - asg.departureData.kmAwal
       : null;
 
   let inlineTransitionSummary = 'Menunggu laporan keberangkatan';
@@ -632,6 +740,22 @@ export function resolveAssignmentStatusTimeline(
         : `Tujuan pengiriman: ${asg.destination}`,
       metrics: isDeliveredOrLater
         ? [
+            endKmValue !== null
+              ? `KM Sampai: ${endKmValue.toLocaleString('id-ID')} km${
+                  kmDelta !== null
+                    ? ` (${kmDelta.toLocaleString('id-ID')} km)`
+                    : ''
+                }`
+              : '',
+            isPendingin &&
+            (asg.deliveredData?.suhuSampai || asg.handoverData?.suhuAkhir)
+              ? `Suhu Sampai: ${
+                  asg.deliveredData?.suhuSampai || asg.handoverData?.suhuAkhir
+                }`
+              : '',
+            asg.deliveredData?.bbmSampai
+              ? `BBM Sampai: ${asg.deliveredData.bbmSampai}`
+              : '',
             departToDeliveredText
               ? `Waktu Tempuh: ${departToDeliveredText}`
               : '',
@@ -657,7 +781,7 @@ export function resolveAssignmentStatusTimeline(
       fullTimeText: handoverAt
         ? formatRealTimeTimestamp(handoverAt)
         : asg.status === TaskStatus.DELIVERED
-        ? 'Armada sudah tiba — menunggu tanda tangan & berita acara Handover'
+        ? 'Armada sudah sampai — menunggu Berita Acara Serah Terima'
         : 'Menunggu penyelesaian serah terima',
       elapsedFromPreviousText: deliveredToHandoverText
         ? `Durasi Bongkar / Handover: ${deliveredToHandoverText}`
@@ -667,15 +791,10 @@ export function resolveAssignmentStatusTimeline(
         : 'Penerima muatan di lokasi tujuan',
       metrics: asg.handoverData
         ? [
-            `Odo Akhir: ${asg.handoverData.kmAkhir.toLocaleString('id-ID')} km${
-              kmDelta !== null
-                ? ` (${kmDelta.toLocaleString('id-ID')} km)`
-                : ''
-            }`,
-            isPendingin && asg.handoverData.suhuAkhir
-              ? `Suhu Akhir: ${asg.handoverData.suhuAkhir}`
+            asg.handoverData.penerimaNama
+              ? `Penerima: ${asg.handoverData.penerimaNama}`
               : '',
-            asg.handoverData.kondisiAkhir || '',
+            asg.handoverData.catatanSerahTerima || '',
             totalTripText ? `Total Perjalanan: ${totalTripText}` : '',
           ].filter(Boolean)
         : [],
@@ -873,11 +992,19 @@ export function computeDailyOperationalSummary(
       departToDeliveredDurations.push(tl.departToDeliveredMinutes);
     }
 
+    const endKm =
+      typeof asg.handoverData?.kmAkhir === 'number' &&
+      asg.handoverData.kmAkhir >= 0
+        ? asg.handoverData.kmAkhir
+        : typeof asg.deliveredData?.kmSampai === 'number' &&
+          asg.deliveredData.kmSampai >= 0
+        ? asg.deliveredData.kmSampai
+        : null;
     const kmDelta =
       asg.departureData &&
-      asg.handoverData &&
-      asg.handoverData.kmAkhir >= asg.departureData.kmAwal
-        ? asg.handoverData.kmAkhir - asg.departureData.kmAwal
+      endKm !== null &&
+      endKm >= asg.departureData.kmAwal
+        ? endKm - asg.departureData.kmAwal
         : null;
     if (kmDelta !== null && kmDelta > 0) {
       totalDistanceKm += kmDelta;

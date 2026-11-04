@@ -136,10 +136,15 @@ export interface AssignmentPhotoSlotDescriptor {
 
 export function buildAssignmentPhotoDescriptors(
   assignment: Assignment,
-  vaultMedia?: Pick<Assignment, 'departureData' | 'handoverData'> | null
+  vaultMedia?: Pick<
+    Assignment,
+    'departureData' | 'deliveredData' | 'handoverData'
+  > | null
 ): AssignmentPhotoSlotDescriptor[] {
   const jenisKendaraan =
-    assignment.departureData?.jenisKendaraan || 'Mobil Pendingin';
+    assignment.deliveredData?.jenisKendaraan ||
+    assignment.departureData?.jenisKendaraan ||
+    'Mobil Pendingin';
   const isPendingin = jenisKendaraan !== 'Non Pendingin';
 
   const hasDepSuhuSignal = Boolean(
@@ -151,6 +156,8 @@ export function buildAssignmentPhotoDescriptors(
 
   const hasHanSuhuSignal = Boolean(
     isPendingin ||
+      assignment.deliveredData?.fotoSuhuSampai ||
+      vaultMedia?.deliveredData?.fotoSuhuSampai ||
       assignment.handoverData?.fotoSuhuSerahTerima ||
       vaultMedia?.handoverData?.fotoSuhuSerahTerima ||
       assignment.driveMedia?.fotoSuhuSerahTerimaUrl
@@ -159,9 +166,19 @@ export function buildAssignmentPhotoDescriptors(
   const depTimestampLabel = assignment.departureData?.timestamp
     ? formatRealTimeTimestamp(assignment.departureData.timestamp)
     : '';
-  const hanTimestampLabel = assignment.handoverData?.timestamp
-    ? formatRealTimeTimestamp(assignment.handoverData.timestamp)
-    : '';
+  const delivTimestampLabel =
+    assignment.deliveredData?.timestamp || assignment.deliveredAt
+      ? formatRealTimeTimestamp(
+          assignment.deliveredData?.timestamp || assignment.deliveredAt || ''
+        )
+      : assignment.handoverData?.timestamp
+      ? formatRealTimeTimestamp(assignment.handoverData.timestamp)
+      : '';
+
+  const kmSampaiVal =
+    assignment.deliveredData?.kmSampai ?? assignment.handoverData?.kmAkhir;
+  const suhuSampaiVal =
+    assignment.deliveredData?.suhuSampai || assignment.handoverData?.suhuAkhir;
 
   const slots: AssignmentPhotoSlotDescriptor[] = [
     {
@@ -212,21 +229,28 @@ export function buildAssignmentPhotoDescriptors(
     {
       apiSlot: 'odo-serahterima',
       stage: 'SERAH_TERIMA',
-      shortLabel: 'Odo Akhir',
-      title: '03. Foto Odometer Serah Terima',
+      shortLabel: 'Odo Sampai',
+      title: '03. Foto Odometer Sampai (Delivered)',
       caption:
-        assignment.handoverData?.kmAkhir !== undefined
-          ? `KM Akhir: ${assignment.handoverData.kmAkhir.toLocaleString('id-ID')} km${
-              hanTimestampLabel ? ` · ${hanTimestampLabel}` : ''
+        kmSampaiVal !== undefined
+          ? `KM Sampai: ${kmSampaiVal.toLocaleString('id-ID')} km${
+              delivTimestampLabel ? ` · ${delivTimestampLabel}` : ''
             }`
-          : 'Menunggu laporan serah terima Driver',
-      primarySrc: assignment.handoverData?.fotoOdometerSerahTerima,
-      vaultSrc: vaultMedia?.handoverData?.fotoOdometerSerahTerima,
+          : 'Menunggu laporan Delivered (Sampai) Driver',
+      primarySrc:
+        assignment.deliveredData?.fotoOdometerSampai ||
+        assignment.handoverData?.fotoOdometerSerahTerima,
+      vaultSrc:
+        vaultMedia?.deliveredData?.fotoOdometerSampai ||
+        vaultMedia?.handoverData?.fotoOdometerSerahTerima,
       driveUrl: assignment.driveMedia?.fotoOdometerSerahTerimaUrl,
       hasEvidenceSignal: Boolean(
-        assignment.handoverData?.fotoOdometerSerahTerima ||
+        assignment.deliveredData?.fotoOdometerSampai ||
+          vaultMedia?.deliveredData?.fotoOdometerSampai ||
+          assignment.handoverData?.fotoOdometerSerahTerima ||
           vaultMedia?.handoverData?.fotoOdometerSerahTerima ||
           assignment.driveMedia?.fotoOdometerSerahTerimaUrl ||
+          assignment.deliveredData ||
           assignment.handoverData
       ),
     },
@@ -235,21 +259,27 @@ export function buildAssignmentPhotoDescriptors(
           {
             apiSlot: 'suhu-serahterima' as const,
             stage: 'SERAH_TERIMA' as const,
-            shortLabel: 'Suhu Akhir',
-            title: '04. Foto Monitor Suhu Serah Terima',
-            caption: assignment.handoverData?.suhuAkhir
-              ? `Suhu Akhir: ${assignment.handoverData.suhuAkhir}${
-                  hanTimestampLabel ? ` · ${hanTimestampLabel}` : ''
+            shortLabel: 'Suhu Sampai',
+            title: '04. Foto Monitor Pendingin Sampai (Delivered)',
+            caption: suhuSampaiVal
+              ? `Suhu Sampai: ${suhuSampaiVal}${
+                  delivTimestampLabel ? ` · ${delivTimestampLabel}` : ''
                 }`
-              : 'Menunggu foto monitor suhu serah terima',
-            primarySrc: assignment.handoverData?.fotoSuhuSerahTerima,
-            vaultSrc: vaultMedia?.handoverData?.fotoSuhuSerahTerima,
+              : 'Menunggu foto monitor pendingin sampai',
+            primarySrc:
+              assignment.deliveredData?.fotoSuhuSampai ||
+              assignment.handoverData?.fotoSuhuSerahTerima,
+            vaultSrc:
+              vaultMedia?.deliveredData?.fotoSuhuSampai ||
+              vaultMedia?.handoverData?.fotoSuhuSerahTerima,
             driveUrl: assignment.driveMedia?.fotoSuhuSerahTerimaUrl,
             hasEvidenceSignal: Boolean(
-              assignment.handoverData?.fotoSuhuSerahTerima ||
+              assignment.deliveredData?.fotoSuhuSampai ||
+                vaultMedia?.deliveredData?.fotoSuhuSampai ||
+                assignment.handoverData?.fotoSuhuSerahTerima ||
                 vaultMedia?.handoverData?.fotoSuhuSerahTerima ||
                 assignment.driveMedia?.fotoSuhuSerahTerimaUrl ||
-                assignment.handoverData?.suhuAkhir
+                suhuSampaiVal
             ),
           },
         ]

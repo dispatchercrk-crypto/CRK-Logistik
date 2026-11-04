@@ -78,6 +78,18 @@ interface DepartureData {
   fotoSuhuBerangkat?: string;
 }
 
+interface DeliveredData {
+  timestamp: string;
+  jenisKendaraan?: 'Mobil Pendingin' | 'Non Pendingin';
+  kmSampai: number;
+  suhuSampai: string;
+  bbmSampai: string;
+  kondisiSampai: string;
+  catatanSampai: string;
+  fotoOdometerSampai?: string;
+  fotoSuhuSampai?: string;
+}
+
 interface HandoverData {
   timestamp: string;
   kmAkhir: number;
@@ -174,6 +186,7 @@ interface AssignmentRecord {
     | 'Handover'
     | 'Selesai';
   departureData?: DepartureData;
+  deliveredData?: DeliveredData;
   handoverData?: HandoverData;
   notes: string;
   needsSheetSync?: boolean;
@@ -225,6 +238,12 @@ interface PersistentStore {
   spreadsheetTitle: string;
   spreadsheetUrl: string;
   appsScriptUrl?: string;
+  appsScriptBridgeStatus?:
+    | 'ACTIVE'
+    | 'NEEDS_SCRIPT_UPDATE'
+    | 'AUTH_BLOCKED_HTML'
+    | 'ERROR'
+    | 'NONE';
   liveCsvReadable?: boolean;
   driveRootFolderId: string;
   driveRootFolderUrl: string;
@@ -264,14 +283,25 @@ interface PersistentStore {
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'dispatch-store.json');
 
+const DEFAULT_BOOT_SPREADSHEET_ID = (
+  process.env.GOOGLE_SPREADSHEET_ID ||
+  '1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac'
+).trim();
+const DEFAULT_BOOT_APPS_SCRIPT_URL = (
+  process.env.GOOGLE_APPS_SCRIPT_URL ||
+  'https://script.google.com/macros/s/AKfycbz8pCRDJCL9JhbYRMHmYlPlgefG-KyQNDgiAOnb9MrSOHsKjVbv5jj-FIvcRnd1OEBS/exec'
+).trim();
+
 function getInitialStore(): PersistentStore {
   return {
     adminPin: '123456',
     isDefaultPin: true,
-    spreadsheetId: (process.env.GOOGLE_SPREADSHEET_ID || '').trim(),
+    spreadsheetId: DEFAULT_BOOT_SPREADSHEET_ID,
     spreadsheetTitle: '',
-    spreadsheetUrl: '',
-    appsScriptUrl: (process.env.GOOGLE_APPS_SCRIPT_URL || '').trim(),
+    spreadsheetUrl: DEFAULT_BOOT_SPREADSHEET_ID
+      ? `https://docs.google.com/spreadsheets/d/${DEFAULT_BOOT_SPREADSHEET_ID}/edit`
+      : '',
+    appsScriptUrl: DEFAULT_BOOT_APPS_SCRIPT_URL,
     liveCsvReadable: false,
     driveRootFolderId: '',
     driveRootFolderUrl: '',
@@ -802,13 +832,20 @@ function formatDriverRealtimeWhatsAppMessage(
   };
 
   const dep = asg.departureData;
+  const deliv = asg.deliveredData;
   const ho = asg.handoverData;
-  const jenisKendaraan = dep?.jenisKendaraan || 'Mobil Pendingin';
+  const jenisKendaraan =
+    dep?.jenisKendaraan || deliv?.jenisKendaraan || 'Mobil Pendingin';
   const isPendingin = jenisKendaraan !== 'Non Pendingin';
   const titikBerangkat =
     dep?.titikKeberangkatan || asg.origin || 'Menunggu Input Driver';
+  const effectiveArrivalKm = ho?.kmAkhir ?? deliv?.kmSampai;
   const kmDelta =
-    dep && ho && ho.kmAkhir >= dep.kmAwal ? ho.kmAkhir - dep.kmAwal : null;
+    dep &&
+    typeof effectiveArrivalKm === 'number' &&
+    effectiveArrivalKm >= dep.kmAwal
+      ? effectiveArrivalKm - dep.kmAwal
+      : null;
 
   const departureLines = dep
     ? [
@@ -836,47 +873,79 @@ function formatDriverRealtimeWhatsAppMessage(
         'Status Keberangkatan : Menunggu pengisian laporan keberangkatan Driver',
       ];
 
-  const handoverLines = ho
+  const hasArrivalMetrics = Boolean(deliv || ho);
+  const arrivalKm = deliv?.kmSampai ?? ho?.kmAkhir ?? 0;
+  const arrivalSuhu = deliv?.suhuSampai || ho?.suhuAkhir || '-';
+  const arrivalBbm = deliv?.bbmSampai || ho?.bbmAkhir || '-';
+  const arrivalKondisi = deliv?.kondisiSampai || ho?.kondisiAkhir || '-';
+  const hasFotoOdoSampai = Boolean(
+    deliv?.fotoOdometerSampai ||
+      ho?.fotoOdometerSerahTerima ||
+      asg.driveMedia?.fotoOdometerSerahTerimaUrl
+  );
+  const hasFotoSuhuSampai = Boolean(
+    deliv?.fotoSuhuSampai ||
+      ho?.fotoSuhuSerahTerima ||
+      asg.driveMedia?.fotoSuhuSerahTerimaUrl
+  );
+
+  const deliveredLines = hasArrivalMetrics
     ? [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        `Waktu Serah Terima : ${formatWibTimestamp(ho.timestamp)}`,
-        `Odometer Akhir : ${ho.kmAkhir.toLocaleString('id-ID')} km${
+        '*--- DATA DELIVERED (SAMPAI DI TUJUAN) ---*',
+        `Waktu Sampai : ${formatWibTimestamp(
+          deliv?.timestamp || asg.deliveredAt || ho?.timestamp || ''
+        )}`,
+        `Odometer KM Sampai : ${arrivalKm.toLocaleString('id-ID')} km${
           kmDelta !== null
             ? ` (Jarak Tempuh: ${kmDelta.toLocaleString('id-ID')} km)`
             : ''
         }`,
-        isPendingin ? `Suhu Monitor Akhir : ${ho.suhuAkhir || '-'}` : '',
-        `BBM Akhir : ${ho.bbmAkhir || '-'}`,
-        `Nama Penerima : ${ho.penerimaNama || '-'}`,
-        `Kondisi Akhir : ${ho.kondisiAkhir || '-'}`,
+        isPendingin ? `Suhu Serah Sampai : ${arrivalSuhu}` : '',
+        `Posisi BBM Sampai : ${arrivalBbm}`,
+        `Kondisi Muatan & Segel : ${arrivalKondisi}`,
         isPendingin
-          ? `Bukti & TTD : Odometer (${
-              ho.fotoOdometerSerahTerima ? 'Ada' : '-'
-            }), Monitor Pendingin (${
-              ho.fotoSuhuSerahTerima ? 'Ada' : '-'
-            }), Bukti (${ho.fotoBuktiSerahTerima ? 'Ada' : '-'}), TTD (${
-              ho.tandaTanganPenerima ? 'Tersimpan' : '-'
-            })`
-          : `Bukti & TTD : Odometer (${
-              ho.fotoOdometerSerahTerima ? 'Ada' : '-'
-            }), Bukti (${ho.fotoBuktiSerahTerima ? 'Ada' : '-'}), TTD (${
-              ho.tandaTanganPenerima ? 'Tersimpan' : '-'
-            })`,
+          ? `Foto Sampai : Odometer (${
+              hasFotoOdoSampai ? 'Ada' : '-'
+            }), Monitor Pendingin (${hasFotoSuhuSampai ? 'Ada' : '-'})`
+          : `Foto Sampai : Odometer (${hasFotoOdoSampai ? 'Ada' : '-'})`,
+        deliv?.catatanSampai ? `Catatan Sampai : ${deliv.catatanSampai}` : '',
+      ]
+    : asg.status === 'Delivered'
+    ? [
+        '*--- DATA DELIVERED (SAMPAI DI TUJUAN) ---*',
+        `Waktu Sampai : ${formatWibTimestamp(
+          asg.deliveredAt || new Date().toISOString()
+        )}`,
+        'Status Sampai : Armada telah tiba di tujuan (Delivered)',
+      ]
+    : [];
+
+  const handoverLines = ho
+    ? [
+        '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+        `Waktu Serah Terima : ${formatWibTimestamp(ho.timestamp)}`,
+        `Nama Penerima : ${ho.penerimaNama || '-'}`,
+        `Bukti & TTD : Foto Bukti (${
+          ho.fotoBuktiSerahTerima || asg.driveMedia?.fotoBuktiSerahTerimaUrl
+            ? 'Ada'
+            : '-'
+        }), TTD Penerima (${
+          ho.tandaTanganPenerima || asg.driveMedia?.tandaTanganPenerimaUrl
+            ? 'Tersimpan'
+            : '-'
+        })`,
         ho.catatanSerahTerima
           ? `Catatan Serah Terima : ${ho.catatanSerahTerima}`
           : '',
       ]
     : asg.status === 'Delivered'
     ? [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        `Waktu Tiba (Delivered) : ${formatWibTimestamp(
-          asg.deliveredAt || new Date().toISOString()
-        )}`,
-        'Status Serah Terima : Armada telah tiba di tujuan (Delivered) — siap proses berita acara Handover',
+        '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+        'Status Serah Terima : Menunggu pengisian Berita Acara Serah Terima (Nama Penerima, Foto Bukti & TTD)',
       ]
     : [
-        '*--- DATA SERAH TERIMA (HANDOVER) ---*',
-        'Status Serah Terima : Menunggu penyelesaian perjalanan & berita acara serah terima',
+        '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
+        'Status Serah Terima : Menunggu armada tiba di tujuan & berita acara serah terima',
       ];
 
   const resolvedPhone = resolveDriverPhone(asg.driverId, asg.driverPhone);
@@ -914,7 +983,7 @@ function formatDriverRealtimeWhatsAppMessage(
     `Armada : ${asg.plateNumber}${
       asg.vehicleType ? ` (${asg.vehicleType})` : ''
     }`,
-    dep ? `Jenis Armada : ${jenisKendaraan}` : '',
+    dep || deliv ? `Jenis Armada : ${jenisKendaraan}` : '',
     `Titik Keberangkatan : ${titikBerangkat}`,
     `Tujuan Pengiriman : ${asg.destination}`,
     `Rute : ${titikBerangkat} -> ${asg.destination}`,
@@ -923,6 +992,7 @@ function formatDriverRealtimeWhatsAppMessage(
     asg.notes ? `Instruksi Dispatcher : ${asg.notes}` : '',
     '',
     ...departureLines,
+    ...(deliveredLines.length > 0 ? ['', ...deliveredLines] : []),
     '',
     ...handoverLines,
   ]
@@ -1142,11 +1212,15 @@ function buildPublicState() {
       spreadsheetTitle: store.spreadsheetTitle,
       spreadsheetUrl: store.spreadsheetUrl,
       appsScriptUrl: store.appsScriptUrl || '',
-      serverSheetSyncMode: store.appsScriptUrl
-        ? ('APPS_SCRIPT_24_7' as const)
-        : store.liveCsvReadable
-        ? ('LIVE_CSV_AND_OAUTH' as const)
-        : ('OAUTH_AUTO' as const),
+      appsScriptBridgeStatus: store.appsScriptUrl
+        ? store.appsScriptBridgeStatus || 'NONE'
+        : 'NONE',
+      serverSheetSyncMode:
+        store.appsScriptUrl && store.appsScriptBridgeStatus === 'ACTIVE'
+          ? ('APPS_SCRIPT_24_7' as const)
+          : store.liveCsvReadable
+          ? ('LIVE_CSV_AND_OAUTH' as const)
+          : ('OAUTH_AUTO' as const),
       driveRootFolderId: store.driveRootFolderId || '',
       driveRootFolderUrl: store.driveRootFolderUrl || '',
       lastSyncedAt: store.lastSyncedAt,
@@ -1381,6 +1455,7 @@ async function startServer() {
             spreadsheetId: store.spreadsheetId,
             spreadsheetTitle: store.spreadsheetTitle,
             spreadsheetUrl: store.spreadsheetUrl,
+            appsScriptUrl: store.appsScriptUrl,
             driveRootFolderId: store.driveRootFolderId,
             driveRootFolderUrl: store.driveRootFolderUrl,
             dispatcherWaPhone: store.dispatcherWaPhone,
@@ -1468,12 +1543,19 @@ async function startServer() {
       }> = [];
 
       if (Array.isArray(remoteState.assignments)) {
+        const syncedAsgNoSet = new Set(
+          (store.syncedAssignmentNos || []).map(normalizeSyncKey).filter(Boolean)
+        );
         const remoteById = new Map<string, AssignmentRecord>();
+        const localIds = new Set<string>();
+        const localNos = new Set<string>();
         for (const ra of remoteState.assignments) {
           if (ra && ra.id) remoteById.set(ra.id, ra);
         }
 
         store.assignments = store.assignments.map((localAsg) => {
+          localIds.add(localAsg.id);
+          localNos.add(normalizeSyncKey(localAsg.noPenugasan));
           const remoteAsg = remoteById.get(localAsg.id);
           if (!remoteAsg) return localAsg;
 
@@ -1547,6 +1629,35 @@ async function startServer() {
           }
           return localAsg;
         });
+
+        if (!store.pendingAssignmentDeletionPush) {
+          for (const ra of remoteState.assignments) {
+            if (!ra || !ra.id || !ra.noPenugasan) continue;
+            const normNo = normalizeSyncKey(ra.noPenugasan);
+            if (localIds.has(ra.id) || localNos.has(normNo)) continue;
+            if (
+              !isKeyTombstoned('assignments', ra.id, ra.noPenugasan) &&
+              !syncedAsgNoSet.has(normNo)
+            ) {
+              const adopted: AssignmentRecord = {
+                ...ra,
+                needsSheetSync: true,
+              };
+              store.assignments.push(adopted);
+              const seq = Math.max(
+                adopted.sequenceNumber || 0,
+                extractSequenceFromNo(adopted.noPenugasan)
+              );
+              if (seq > store.lastSequence) {
+                store.lastSequence = seq;
+              }
+              progressedEvents.push({
+                previousStatus: adopted.status,
+                assignment: adopted,
+              });
+            }
+          }
+        }
       }
 
       if (addedNotifs.length > 0 || progressedEvents.length > 0) {
@@ -1893,6 +2004,7 @@ async function startServer() {
           : 'Menunggu Berangkat',
       notes: String(snap.notes || '').trim(),
       departureData: snap.departureData,
+      deliveredData: snap.deliveredData,
       handoverData: snap.handoverData,
       driveFolderUrl: snap.driveFolderUrl,
       driveMedia: mergeDriveMediaLinks(snap.driveMedia, undefined),
@@ -1905,8 +2017,56 @@ async function startServer() {
     return store.assignments.length - 1;
   };
 
+  let triggerSerializedSheetPull: (() => Promise<boolean>) | null = null;
+  let triggerSerializedSheetSyncAndPush:
+    | ((timeoutMs?: number) => Promise<boolean>)
+    | null = null;
+
+  const adoptConfigSnapshotIfMissing = (rawSnap: unknown): boolean => {
+    if (!rawSnap || typeof rawSnap !== 'object') return false;
+    const snap = rawSnap as {
+      spreadsheetId?: unknown;
+      appsScriptUrl?: unknown;
+    };
+    let changed = false;
+    const candSheetId =
+      typeof snap.spreadsheetId === 'string' ? snap.spreadsheetId.trim() : '';
+    const candBridgeUrl =
+      typeof snap.appsScriptUrl === 'string' ? snap.appsScriptUrl.trim() : '';
+
+    if (candSheetId && !String(store.spreadsheetId || '').trim()) {
+      store.spreadsheetId = candSheetId;
+      if (!store.spreadsheetUrl) {
+        store.spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${candSheetId}/edit`;
+      }
+      changed = true;
+    }
+    if (
+      candBridgeUrl &&
+      /^https:\/\/script\.google\.com\//i.test(candBridgeUrl) &&
+      !String(store.appsScriptUrl || '').trim()
+    ) {
+      store.appsScriptUrl = candBridgeUrl;
+      changed = true;
+    }
+    if (changed) {
+      saveStore(store, true);
+    }
+    return changed;
+  };
+
   // Self-healing Driver Link & Offline Task Context Recovery
-  app.post('/api/driver/ensure-context', (req, res) => {
+  app.post('/api/driver/ensure-context', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
+    if (
+      (!store.lastSyncedAt || store.drivers.length === 0) &&
+      String(store.spreadsheetId || '').trim() &&
+      triggerSerializedSheetPull
+    ) {
+      await triggerSerializedSheetPull();
+    }
+
     const drvSnap = req.body?.driverSnapshot as Partial<DriverRecord> | undefined;
     const asgSnaps = Array.isArray(req.body?.assignmentSnapshots)
       ? (req.body.assignmentSnapshots as Array<Partial<AssignmentRecord>>)
@@ -1932,30 +2092,99 @@ async function startServer() {
       }
     }
 
-    // Only auto-restore cached driver assignments when server genuinely cold-started with zero sync history
-    // and never when a clean reset / assignment deletion push is pending
+    // Auto-restore cached/vault assignments when cold-started, opened via direct link,
+    // or when an active assignment was never yet confirmed synced to Google Sheets (and is not tombstoned)
     const serverLooksColdStarted =
       store.assignments.length === 0 &&
       store.lastSequence === 0 &&
       !store.lastSyncedAt &&
       !store.lastSyncedSpreadsheetId;
     const isDirectLinkTask = Boolean(req.body?.fromUrlLink);
+    const recoverUnsynced = Boolean(req.body?.recoverUnsynced);
+    const syncedAsgNoSet = new Set(
+      (store.syncedAssignmentNos || []).map(normalizeSyncKey).filter(Boolean)
+    );
 
-    if (
-      !store.pendingAssignmentDeletionPush &&
-      (serverLooksColdStarted || isDirectLinkTask)
-    ) {
+    if (!store.pendingAssignmentDeletionPush) {
       for (const snap of asgSnaps) {
-        const beforeLen = store.assignments.length;
-        hydrateMissingAssignmentSnapshot(snap, false);
-        if (store.assignments.length > beforeLen) {
-          mutated = true;
+        if (!snap || !snap.id || !snap.noPenugasan) continue;
+        const normNo = normalizeSyncKey(snap.noPenugasan);
+        if (isKeyTombstoned('assignments', snap.id, snap.noPenugasan)) {
+          continue;
+        }
+        const existingIdx = store.assignments.findIndex(
+          (a) => a.id === snap.id || normalizeSyncKey(a.noPenugasan) === normNo
+        );
+        if (existingIdx !== -1) {
+          const existing = store.assignments[existingIdx];
+          const snapRank = relayStatusRank(String(snap.status || ''));
+          const localRank = relayStatusRank(existing.status);
+          const snapHasNewDep =
+            Boolean(snap.departureData?.timestamp) &&
+            !existing.departureData?.timestamp;
+          const snapHasNewDeliv =
+            Boolean(snap.deliveredData?.timestamp) &&
+            !existing.deliveredData?.timestamp;
+          const snapHasNewHo =
+            Boolean(snap.handoverData?.timestamp) &&
+            !existing.handoverData?.timestamp;
+          if (
+            snapRank > localRank ||
+            snapHasNewDep ||
+            snapHasNewDeliv ||
+            snapHasNewHo
+          ) {
+            const mergedDrive = mergeDriveMediaLinks(
+              existing.driveMedia,
+              snap.driveMedia
+            );
+            store.assignments[existingIdx] = {
+              ...existing,
+              status:
+                snapRank >= localRank &&
+                (snap.status === 'Dalam Perjalanan' ||
+                  snap.status === 'Delivered' ||
+                  snap.status === 'Handover' ||
+                  snap.status === 'Selesai')
+                  ? snap.status
+                  : existing.status,
+              origin: String(snap.origin || '').trim() || existing.origin,
+              deliveredAt: snap.deliveredAt || existing.deliveredAt,
+              departureData: snap.departureData || existing.departureData,
+              deliveredData: snap.deliveredData || existing.deliveredData,
+              handoverData: snap.handoverData || existing.handoverData,
+              driveFolderUrl:
+                mergedDrive?.folderUrl ||
+                existing.driveFolderUrl ||
+                snap.driveFolderUrl,
+              driveMedia: mergedDrive,
+              needsSheetSync: true,
+            };
+            mutated = true;
+          }
+          continue;
+        }
+
+        const neverConfirmedInSheet = !syncedAsgNoSet.has(normNo);
+        if (
+          serverLooksColdStarted ||
+          isDirectLinkTask ||
+          (recoverUnsynced && neverConfirmedInSheet)
+        ) {
+          const beforeLen = store.assignments.length;
+          hydrateMissingAssignmentSnapshot(snap, false);
+          if (store.assignments.length > beforeLen) {
+            mutated = true;
+          }
         }
       }
     }
 
     if (mutated) {
       saveStore(store);
+      if (triggerSerializedSheetSyncAndPush) {
+        await triggerSerializedSheetSyncAndPush(9000);
+      }
       const publicState = broadcastRealtime({
         type: 'state:sync',
         clientId: getRequestClientId(req),
@@ -1969,7 +2198,9 @@ async function startServer() {
   });
 
   // Resilient Driver Login
-  app.post('/api/auth/driver', (req, res) => {
+  app.post('/api/auth/driver', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
     const driverId = String(req.body?.driverId || '').trim();
     const pin = String(req.body?.pin || '').trim();
     const drvSnap = req.body?.driverSnapshot as Partial<DriverRecord> | undefined;
@@ -1984,6 +2215,17 @@ async function startServer() {
     let driver = store.drivers.find(
       (d) => d.id.trim().toLowerCase() === driverId.toLowerCase()
     );
+
+    if (
+      !driver &&
+      String(store.spreadsheetId || '').trim() &&
+      triggerSerializedSheetPull
+    ) {
+      await triggerSerializedSheetPull();
+      driver = store.drivers.find(
+        (d) => d.id.trim().toLowerCase() === driverId.toLowerCase()
+      );
+    }
 
     if (!driver && drvSnap && drvSnap.id && drvSnap.name) {
       const snapId = String(drvSnap.id).trim().toUpperCase();
@@ -2147,7 +2389,11 @@ async function startServer() {
     } = req.body || {};
 
     if (typeof appsScriptUrl === 'string') {
-      store.appsScriptUrl = appsScriptUrl.trim();
+      const nextBridge = appsScriptUrl.trim();
+      if (nextBridge !== (store.appsScriptUrl || '')) {
+        store.appsScriptBridgeStatus = nextBridge ? undefined : 'NONE';
+      }
+      store.appsScriptUrl = nextBridge;
     }
     if (typeof spreadsheetUrl === 'string') {
       const nextUrl = spreadsheetUrl.trim();
@@ -2357,8 +2603,16 @@ async function startServer() {
     if (typeof spreadsheetUrl === 'string' && spreadsheetUrl.trim()) {
       store.spreadsheetUrl = spreadsheetUrl.trim();
     }
+    let hasAppsScriptUrlToPush = false;
     if (typeof appsScriptUrl === 'string' && appsScriptUrl.trim()) {
-      store.appsScriptUrl = appsScriptUrl.trim();
+      const sheetBridgeUrl = appsScriptUrl.trim();
+      if (!store.appsScriptUrl) {
+        store.appsScriptUrl = sheetBridgeUrl;
+      } else if (store.appsScriptUrl.trim() !== sheetBridgeUrl) {
+        hasAppsScriptUrlToPush = true;
+      }
+    } else if (store.appsScriptUrl && Array.isArray(assignments)) {
+      hasAppsScriptUrlToPush = true;
     }
     if (typeof driveRootFolderId === 'string' && driveRootFolderId.trim()) {
       store.driveRootFolderId = driveRootFolderId.trim();
@@ -2395,7 +2649,7 @@ async function startServer() {
       store.letterPrefix = letterPrefix.trim().toUpperCase();
     }
 
-    let hasCustomPinToPush = false;
+    let hasCustomPinToPush = hasAppsScriptUrlToPush;
     const incomingSheetPin =
       typeof adminPin === 'string' ? adminPin.trim() : '';
     if (incomingSheetPin.length >= 4 && incomingSheetPin !== '123456') {
@@ -2637,6 +2891,26 @@ async function startServer() {
       }
     }
 
+    const reconcileStatusRank = (s?: string): number => {
+      if (s === 'Handover' || s === 'Selesai') return 3;
+      if (s === 'Delivered') return 2;
+      if (s === 'Dalam Perjalanan') return 1;
+      return 0;
+    };
+
+    const pulledSheetNoSet = new Set(
+      Array.isArray(assignments)
+        ? assignments
+            .map((a) => normalizeSyncKey(a.noPenugasan))
+            .filter(Boolean)
+        : []
+    );
+    const pulledSheetExpIdSet = new Set(
+      Array.isArray(driverExpenses)
+        ? driverExpenses.map((e) => normalizeSyncKey(e.id)).filter(Boolean)
+        : []
+    );
+
     let hasPendingDriverUpdates = Boolean(
       store.pendingAssignmentDeletionPush || store.pendingExpenseDeletionPush
     );
@@ -2680,7 +2954,18 @@ async function startServer() {
           const existingLocal = localByNo.get(normNo);
           if (existingLocal) {
             usedLocalNos.add(normNo);
-            if (existingLocal.needsSheetSync) {
+            const localProgressedAheadOfSheet =
+              reconcileStatusRank(existingLocal.status) >
+                reconcileStatusRank(sheetItem.status) ||
+              (Boolean(existingLocal.departureData?.timestamp) &&
+                !sheetItem.departureData?.timestamp) ||
+              (Boolean(existingLocal.deliveredData?.timestamp) &&
+                !sheetItem.deliveredData?.timestamp) ||
+              (Boolean(existingLocal.handoverData?.timestamp) &&
+                !sheetItem.handoverData?.timestamp) ||
+              (Boolean(existingLocal.deliveredAt) && !sheetItem.deliveredAt);
+
+            if (existingLocal.needsSheetSync || localProgressedAheadOfSheet) {
               hasPendingDriverUpdates = true;
               const mergedPendingDrive = mergeDriveMediaLinks(
                 existingLocal.driveMedia,
@@ -2693,6 +2978,7 @@ async function startServer() {
                   existingLocal.driveFolderUrl ||
                   sheetItem.driveFolderUrl,
                 driveMedia: mergedPendingDrive,
+                needsSheetSync: true,
               });
               continue;
             }
@@ -2701,8 +2987,10 @@ async function startServer() {
               sheetItem.driveMedia
             );
             const localHasMoreDriveLinks =
-              Boolean(existingLocal.driveMedia?.fotoOdometerBerangkatUrl) &&
-              !sheetItem.driveMedia?.fotoOdometerBerangkatUrl;
+              (Boolean(existingLocal.driveMedia?.fotoOdometerBerangkatUrl) &&
+                !sheetItem.driveMedia?.fotoOdometerBerangkatUrl) ||
+              (Boolean(existingLocal.driveMedia?.fotoOdometerSerahTerimaUrl) &&
+                !sheetItem.driveMedia?.fotoOdometerSerahTerimaUrl);
             if (localHasMoreDriveLinks) {
               hasPendingDriverUpdates = true;
             }
@@ -2731,19 +3019,37 @@ async function startServer() {
                       existingLocal.departureData?.fotoSuhuBerangkat,
                   }
                 : existingLocal.departureData,
+              deliveredData: sheetItem.deliveredData
+                ? {
+                    ...sheetItem.deliveredData,
+                    jenisKendaraan:
+                      sheetItem.deliveredData.jenisKendaraan ||
+                      existingLocal.deliveredData?.jenisKendaraan ||
+                      existingLocal.departureData?.jenisKendaraan,
+                    fotoOdometerSampai:
+                      existingLocal.deliveredData?.fotoOdometerSampai,
+                    fotoSuhuSampai:
+                      existingLocal.deliveredData?.fotoSuhuSampai,
+                  }
+                : existingLocal.deliveredData,
               handoverData: sheetItem.handoverData
                 ? {
                     ...sheetItem.handoverData,
                     fotoOdometerSerahTerima:
-                      existingLocal.handoverData?.fotoOdometerSerahTerima,
+                      existingLocal.handoverData?.fotoOdometerSerahTerima ||
+                      existingLocal.deliveredData?.fotoOdometerSampai,
                     fotoSuhuSerahTerima:
-                      existingLocal.handoverData?.fotoSuhuSerahTerima,
+                      existingLocal.handoverData?.fotoSuhuSerahTerima ||
+                      existingLocal.deliveredData?.fotoSuhuSampai,
                     fotoBuktiSerahTerima:
                       existingLocal.handoverData?.fotoBuktiSerahTerima,
                     tandaTanganPenerima:
                       existingLocal.handoverData?.tandaTanganPenerima,
                   }
-                : existingLocal.handoverData,
+                : existingLocal.status === 'Handover' ||
+                  existingLocal.status === 'Selesai'
+                ? existingLocal.handoverData
+                : undefined,
               needsSheetSync: localHasMoreDriveLinks,
             });
           } else {
@@ -2759,14 +3065,17 @@ async function startServer() {
             const wasPreviouslyInSheet = syncedAsgNoSet.has(normNo);
             if (
               forceReplaceAll !== true &&
-              localItem.needsSheetSync &&
-              !wasPreviouslyInSheet
+              !wasPreviouslyInSheet &&
+              !isKeyTombstoned('assignments', localItem.id, localItem.noPenugasan)
             ) {
-              // Newly created in App and not yet pushed to Google Spreadsheet -> preserve & push
+              // Never yet confirmed written to Google Spreadsheet -> preserve & flag for push!
               hasPendingDriverUpdates = true;
-              merged.push(localItem);
+              merged.push({
+                ...localItem,
+                needsSheetSync: true,
+              });
             } else {
-              // Row was deleted in Google Spreadsheet -> remove from App & record tombstone!
+              // Row WAS previously in Google Spreadsheet and is now deleted there -> remove from App & record tombstone!
               addDeletedTombstones('assignments', [
                 localItem.id,
                 localItem.noPenugasan,
@@ -2862,11 +3171,14 @@ async function startServer() {
             const wasPreviouslyInSheet = syncedExpIdSet.has(normId);
             if (
               forceReplaceAll !== true &&
-              localExp.needsSheetSync &&
-              !wasPreviouslyInSheet
+              !wasPreviouslyInSheet &&
+              !isKeyTombstoned('driverExpenses', localExp.id)
             ) {
               hasPendingDriverUpdates = true;
-              mergedExpenses.push(localExp);
+              mergedExpenses.push({
+                ...localExp,
+                needsSheetSync: true,
+              });
             } else {
               addDeletedTombstones('driverExpenses', [localExp.id]);
               hasSheetDeletionsToPrune = true;
@@ -2896,7 +3208,7 @@ async function startServer() {
       store.lastSyncedSpreadsheetId = store.spreadsheetId.trim();
     }
 
-    // Record authoritative synced IDs from pulled Sheet + non-pending items
+    // Record authoritative synced IDs strictly from rows confirmed present in Google Sheets
     store.syncedDriverIds = store.drivers
       .filter((d) => !unsyncedDriverSet.has(normalizeSyncKey(d.id)))
       .map((d) => normalizeSyncKey(d.id))
@@ -2916,11 +3228,23 @@ async function startServer() {
     store.syncedAssignmentNos = store.assignments
       .filter((a) => !a.needsSheetSync)
       .map((a) => normalizeSyncKey(a.noPenugasan))
-      .filter(Boolean);
+      .filter(
+        (no) =>
+          Boolean(no) &&
+          (Array.isArray(assignments)
+            ? pulledSheetNoSet.has(no)
+            : syncedAsgNoSet.has(no))
+      );
     store.syncedExpenseIds = store.driverExpenses
       .filter((e) => !e.needsSheetSync)
       .map((e) => normalizeSyncKey(e.id))
-      .filter(Boolean);
+      .filter(
+        (id) =>
+          Boolean(id) &&
+          (Array.isArray(driverExpenses)
+            ? pulledSheetExpIdSet.has(id)
+            : syncedExpIdSet.has(id))
+      );
 
     if (!hasPendingMasterUpdates) {
       store.needsMasterSheetSync = false;
@@ -3179,11 +3503,19 @@ async function startServer() {
           const parsedTitik = String(row[13] || '').trim();
           const resolvedOrigin =
             parsedTitik || 'Menunggu Titik Keberangkatan Driver';
+          const parsedStatus = parseServerStatus(row[17]);
+          const parsedDeliveredAt = String(row[44] || '').trim() || undefined;
           const hasDeparture =
             String(row[18] || '').trim() !== '' ||
             String(row[19] || '').trim() !== '';
-          const hasHandover =
+          const isHandoverCompleted =
+            parsedStatus === 'Handover' ||
+            parsedStatus === 'Selesai' ||
             String(row[25] || '').trim() !== '' ||
+            String(row[29] || '').trim() !== '';
+          const hasDeliveredMetrics =
+            parsedStatus === 'Delivered' ||
+            Boolean(parsedDeliveredAt) ||
             String(row[26] || '').trim() !== '';
 
           const driveFolderUrlCol = String(row[37] || '').trim();
@@ -3205,6 +3537,8 @@ async function startServer() {
               fotoBuktiHoUrl ||
               ttdPenerimaUrl
           );
+          const parsedArrivalKm =
+            Number(String(row[26] || '0').replace(/[^\d.-]/g, '')) || 0;
 
           return {
             id: String(row[0] || `ASG-SHEET-${seqNum}`).trim(),
@@ -3227,8 +3561,8 @@ async function startServer() {
             purpose: String(row[16] || '').trim(),
             beratMuatan: String(row[36] || '').trim() || undefined,
             volumeCbm: String(row[45] || '').trim() || undefined,
-            status: parseServerStatus(row[17]),
-            deliveredAt: String(row[44] || '').trim() || undefined,
+            status: parsedStatus,
+            deliveredAt: parsedDeliveredAt,
             departureData: hasDeparture
               ? {
                   timestamp: String(row[18] || ''),
@@ -3246,11 +3580,23 @@ async function startServer() {
                   catatanBerangkat: String(row[23] || ''),
                 }
               : undefined,
-            handoverData: hasHandover
+            deliveredData: hasDeliveredMetrics
               ? {
-                  timestamp: String(row[25] || ''),
-                  kmAkhir:
-                    Number(String(row[26] || '0').replace(/[^\d.-]/g, '')) || 0,
+                  timestamp: parsedDeliveredAt || String(row[25] || ''),
+                  jenisKendaraan: parsedJenisKendaraan || 'Mobil Pendingin',
+                  kmSampai: parsedArrivalKm,
+                  suhuSampai: String(row[27] || ''),
+                  bbmSampai: String(row[28] || ''),
+                  kondisiSampai: String(row[30] || ''),
+                  catatanSampai: !isHandoverCompleted
+                    ? String(row[31] || '')
+                    : '',
+                }
+              : undefined,
+            handoverData: isHandoverCompleted
+              ? {
+                  timestamp: String(row[25] || parsedDeliveredAt || ''),
+                  kmAkhir: parsedArrivalKm,
                   suhuAkhir: String(row[27] || ''),
                   bbmAkhir: String(row[28] || ''),
                   penerimaNama: String(row[29] || ''),
@@ -3409,6 +3755,8 @@ async function startServer() {
             const rawTgl = String(row[2] || ts.slice(0, 10)).trim();
             const rawTglKirim = String(row[15] || '').trim();
             const rawTujuanKirim = String(row[16] || '').trim();
+            const rawStrukBbmCell = String(row[10] || '').trim();
+            const rawStrukTolCell = String(row[12] || '').trim();
             return {
               id: String(row[0] || `EXP-SHEET-${idx + 1}`).trim(),
               timestamp: ts,
@@ -3422,9 +3770,13 @@ async function startServer() {
               fleetCardId: String(row[7] || '').trim().toUpperCase(),
               fleetCardNumber: String(row[8] || '').trim(),
               totalPengirimanBbm: bbm,
-              fotoStrukBbmUrl: String(row[10] || '').trim() || undefined,
+              fotoStrukBbmUrl: /^https?:\/\//i.test(rawStrukBbmCell)
+                ? rawStrukBbmCell
+                : undefined,
               totalPengeluaranTol: tol,
-              fotoStrukTolUrl: String(row[12] || '').trim() || undefined,
+              fotoStrukTolUrl: /^https?:\/\//i.test(rawStrukTolCell)
+                ? rawStrukTolCell
+                : undefined,
               totalPengeluaran: rawTot > 0 ? rawTot : bbm + tol,
               catatan: String(row[14] || '').trim(),
               needsSheetSync: false,
@@ -3476,12 +3828,14 @@ async function startServer() {
     const hoMediaStatus = [
       a.driveMedia?.fotoOdometerSerahTerimaUrl
         ? 'Odo:Drive'
-        : a.handoverData?.fotoOdometerSerahTerima
+        : a.handoverData?.fotoOdometerSerahTerima ||
+          a.deliveredData?.fotoOdometerSampai
         ? 'Odo:Ada'
         : '',
       a.driveMedia?.fotoSuhuSerahTerimaUrl
         ? 'Suhu:Drive'
-        : a.handoverData?.fotoSuhuSerahTerima
+        : a.handoverData?.fotoSuhuSerahTerima ||
+          a.deliveredData?.fotoSuhuSampai
         ? 'Suhu:Ada'
         : '',
       a.driveMedia?.fotoBuktiSerahTerimaUrl
@@ -3511,7 +3865,9 @@ async function startServer() {
       a.vehicleId,
       a.plateNumber,
       a.vehicleType,
-      a.departureData?.jenisKendaraan || '',
+      a.departureData?.jenisKendaraan ||
+        a.deliveredData?.jenisKendaraan ||
+        '',
       a.departureData?.titikKeberangkatan || a.origin || '',
       a.routeId,
       a.destination,
@@ -3525,12 +3881,14 @@ async function startServer() {
       a.departureData?.catatanBerangkat || '',
       depMediaStatus,
       a.handoverData?.timestamp || '',
-      a.handoverData?.kmAkhir ?? '',
-      a.handoverData?.suhuAkhir || '',
-      a.handoverData?.bbmAkhir || '',
+      a.handoverData?.kmAkhir ?? a.deliveredData?.kmSampai ?? '',
+      a.handoverData?.suhuAkhir || a.deliveredData?.suhuSampai || '',
+      a.handoverData?.bbmAkhir || a.deliveredData?.bbmSampai || '',
       a.handoverData?.penerimaNama || '',
-      a.handoverData?.kondisiAkhir || '',
-      a.handoverData?.catatanSerahTerima || '',
+      a.handoverData?.kondisiAkhir || a.deliveredData?.kondisiSampai || '',
+      a.handoverData?.catatanSerahTerima ||
+        a.deliveredData?.catatanSampai ||
+        '',
       hoMediaStatus,
       a.notes || '',
       a.createdAt,
@@ -3543,23 +3901,108 @@ async function startServer() {
       a.driveMedia?.fotoSuhuSerahTerimaUrl || '',
       a.driveMedia?.fotoBuktiSerahTerimaUrl || '',
       a.driveMedia?.tandaTanganPenerimaUrl || '',
-      a.deliveredAt || '',
+      a.deliveredAt || a.deliveredData?.timestamp || '',
       a.volumeCbm || '',
     ];
   };
 
-  let serverSheetSyncInFlight = false;
+  // Strict FIFO Promise Chain so pull_all and push_all NEVER overlap or race
+  let sheetSyncChain: Promise<unknown> = Promise.resolve();
 
-  const pushStateViaAppsScriptBridge = async (): Promise<boolean> => {
+  const enqueueSheetSync = <T>(job: () => Promise<T>): Promise<T> => {
+    const next = sheetSyncChain.then(job, job);
+    sheetSyncChain = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
+
+  const buildAssignmentSyncFingerprint = (a: AssignmentRecord): string =>
+    JSON.stringify([
+      a.status,
+      a.origin,
+      a.deliveredAt || a.deliveredData?.timestamp || '',
+      a.departureData?.timestamp || '',
+      a.departureData?.kmAwal ?? '',
+      a.departureData?.suhuAwal || '',
+      a.deliveredData?.kmSampai ?? '',
+      a.deliveredData?.suhuSampai || '',
+      a.handoverData?.timestamp || '',
+      a.handoverData?.kmAkhir ?? '',
+      a.handoverData?.suhuAkhir || '',
+      a.handoverData?.penerimaNama || '',
+      a.notes || '',
+      a.driveFolderUrl || '',
+      a.driveMedia?.syncedAt || '',
+    ]);
+
+  const buildExpenseSyncFingerprint = (e: DriverExpenseRecord): string =>
+    JSON.stringify([
+      e.timestamp,
+      e.totalPengeluaran,
+      e.fotoStrukBbmUrl || '',
+      e.fotoStrukTolUrl || '',
+      e.catatan || '',
+    ]);
+
+  const pushStateViaAppsScriptBridgeInternal = async (): Promise<boolean> => {
     const bridgeUrl = String(store.appsScriptUrl || '').trim();
     const sheetId = String(store.spreadsheetId || '').trim();
     if (!bridgeUrl || !sheetId || !/^https:\/\/script\.google\.com\//i.test(bridgeUrl)) {
       return false;
     }
+
+    // Safety guard: never push an uninitialized cold container before its first successful pull
+    if (
+      !store.lastSyncedAt &&
+      store.drivers.length === 0 &&
+      store.assignments.length === 0 &&
+      !store.pendingAssignmentDeletionPush &&
+      !store.pendingMasterDeletionPush
+    ) {
+      return false;
+    }
+
     try {
       const sortedAssignments = [...store.assignments].sort(
         (a, b) => a.sequenceNumber - b.sequenceNumber
       );
+      const sortedExpenses = [...store.driverExpenses].sort((a, b) =>
+        String(a.timestamp || '').localeCompare(String(b.timestamp || ''))
+      );
+
+      // Snapshot exact versions being pushed so concurrent mutations during fetch are never prematurely marked synced
+      const pushedAsgFingerprints = new Map<string, string>(
+        sortedAssignments.map((a) => [a.id, buildAssignmentSyncFingerprint(a)])
+      );
+      const pushedAsgNos = new Set<string>(
+        sortedAssignments
+          .map((a) => normalizeSyncKey(a.noPenugasan))
+          .filter(Boolean)
+      );
+      const pushedExpFingerprints = new Map<string, string>(
+        sortedExpenses.map((e) => [e.id, buildExpenseSyncFingerprint(e)])
+      );
+      const pushedExpIds = new Set<string>(
+        sortedExpenses.map((e) => normalizeSyncKey(e.id)).filter(Boolean)
+      );
+      const pushedFleetBalances = new Map<string, number>(
+        store.fleetCards.map((fc) => [
+          normalizeSyncKey(fc.id),
+          Math.round(Number(fc.balance) || 0),
+        ])
+      );
+      const pushedDriverIds = new Set<string>(
+        store.drivers.map((d) => normalizeSyncKey(d.id)).filter(Boolean)
+      );
+      const pushedVehicleIds = new Set<string>(
+        store.vehicles.map((v) => normalizeSyncKey(v.id)).filter(Boolean)
+      );
+      const pushedRouteIds = new Set<string>(
+        store.routes.map((r) => normalizeSyncKey(r.id)).filter(Boolean)
+      );
+
       const resp = await fetch(bridgeUrl, {
         method: 'POST',
         redirect: 'follow',
@@ -3580,8 +4023,8 @@ async function startServer() {
             v.plateNumber,
             v.vehicleType,
             v.capacity,
-            v.capacityCbm || '',
             v.status,
+            v.capacityCbm || '',
           ]),
           routesRows: store.routes.map((r) => [
             r.id,
@@ -3595,35 +4038,33 @@ async function startServer() {
             String(Math.round(Number(fc.balance) || 0)),
           ]),
           assignmentsRows: sortedAssignments.map(buildAssignmentRowForSheetBridge),
-          driverExpensesRows: [...store.driverExpenses]
-            .sort((a, b) =>
-              String(a.timestamp || '').localeCompare(String(b.timestamp || ''))
-            )
-            .map((e) => [
-              e.id,
-              e.timestamp,
-              e.tanggal,
-              e.driverId,
-              e.driverName,
-              e.plateNumber || '',
-              e.completedAssignmentNos || '',
-              e.fleetCardId || '',
-              e.fleetCardNumber,
-              String(Math.round(Number(e.totalPengirimanBbm) || 0)),
-              e.fotoStrukBbmUrl || '',
-              String(Math.round(Number(e.totalPengeluaranTol) || 0)),
-              e.fotoStrukTolUrl || '',
-              String(
-                Math.round(
-                  Number(e.totalPengeluaran) ||
-                    (Number(e.totalPengirimanBbm) || 0) +
-                      (Number(e.totalPengeluaranTol) || 0)
-                )
-              ),
-              e.catatan || '',
-              e.tanggalPengiriman || e.tanggal || '',
-              e.tujuanPengiriman || '',
-            ]),
+          driverExpensesRows: sortedExpenses.map((e) => [
+            e.id,
+            e.timestamp,
+            e.tanggal,
+            e.driverId,
+            e.driverName,
+            e.plateNumber || '',
+            e.completedAssignmentNos || '',
+            e.fleetCardId || '',
+            e.fleetCardNumber,
+            String(Math.round(Number(e.totalPengirimanBbm) || 0)),
+            e.fotoStrukBbmUrl ||
+              (e.fotoStrukBbm ? 'Foto Struk BBM Tersimpan' : ''),
+            String(Math.round(Number(e.totalPengeluaranTol) || 0)),
+            e.fotoStrukTolUrl ||
+              (e.fotoStrukTol ? 'Foto Struk Tol Tersimpan' : ''),
+            String(
+              Math.round(
+                Number(e.totalPengeluaran) ||
+                  (Number(e.totalPengirimanBbm) || 0) +
+                    (Number(e.totalPengeluaranTol) || 0)
+              )
+            ),
+            e.catatan || '',
+            e.tanggalPengiriman || e.tanggal || '',
+            e.tujuanPengiriman || '',
+          ]),
           configRows: [
             ['admin_pin', store.adminPin],
             ['dispatcher_wa', store.dispatcherWaPhone],
@@ -3639,31 +4080,112 @@ async function startServer() {
         }),
         signal: AbortSignal.timeout(12000),
       });
-      if (!resp.ok) return false;
+      if (!resp.ok) {
+        if (resp.status === 401 || resp.status === 403) {
+          store.appsScriptBridgeStatus = 'AUTH_BLOCKED_HTML';
+        } else {
+          store.appsScriptBridgeStatus = 'ERROR';
+        }
+        return false;
+      }
       const text = await resp.text();
-      if (text.trim().startsWith('<')) return false;
-      const parsed = JSON.parse(text) as { ok?: boolean; success?: boolean };
+      if (text.trim().startsWith('<')) {
+        const isGoogleLoginHtml =
+          text.includes('accounts.google.com') ||
+          text.includes('ServiceLogin');
+        store.appsScriptBridgeStatus = isGoogleLoginHtml
+          ? 'AUTH_BLOCKED_HTML'
+          : 'NEEDS_SCRIPT_UPDATE';
+        return false;
+      }
+      const parsed = JSON.parse(text) as {
+        ok?: boolean;
+        success?: boolean;
+        error?: string;
+      };
       if (parsed?.ok || parsed?.success) {
-        store.needsMasterSheetSync = false;
+        store.appsScriptBridgeStatus = 'ACTIVE';
         store.pendingMasterDeletionPush = false;
         store.pendingAssignmentDeletionPush = false;
         store.pendingExpenseDeletionPush = false;
-        store.unsyncedDriverIds = [];
-        store.unsyncedVehicleIds = [];
-        store.unsyncedRouteIds = [];
-        store.unsyncedFleetCardIds = [];
-        store.assignments = store.assignments.map((a) => ({
-          ...a,
-          needsSheetSync: false,
-        }));
-        store.driverExpenses = store.driverExpenses.map((e) => ({
-          ...e,
-          needsSheetSync: false,
-        }));
+
+        store.unsyncedDriverIds = (store.unsyncedDriverIds || []).filter(
+          (id) => !pushedDriverIds.has(normalizeSyncKey(id))
+        );
+        store.unsyncedVehicleIds = (store.unsyncedVehicleIds || []).filter(
+          (id) => !pushedVehicleIds.has(normalizeSyncKey(id))
+        );
+        store.unsyncedRouteIds = (store.unsyncedRouteIds || []).filter(
+          (id) => !pushedRouteIds.has(normalizeSyncKey(id))
+        );
+        store.unsyncedFleetCardIds = (store.unsyncedFleetCardIds || []).filter(
+          (id) => {
+            const norm = normalizeSyncKey(id);
+            const currentCard = store.fleetCards.find(
+              (fc) => normalizeSyncKey(fc.id) === norm
+            );
+            if (!currentCard) return false;
+            return (
+              pushedFleetBalances.get(norm) !==
+              Math.round(Number(currentCard.balance) || 0)
+            );
+          }
+        );
+
+        store.needsMasterSheetSync =
+          store.unsyncedDriverIds.length > 0 ||
+          store.unsyncedVehicleIds.length > 0 ||
+          store.unsyncedRouteIds.length > 0 ||
+          store.unsyncedFleetCardIds.length > 0;
+
+        store.assignments = store.assignments.map((a) => {
+          const pushedFp = pushedAsgFingerprints.get(a.id);
+          if (pushedFp && pushedFp === buildAssignmentSyncFingerprint(a)) {
+            return { ...a, needsSheetSync: false };
+          }
+          return a;
+        });
+
+        store.driverExpenses = store.driverExpenses.map((e) => {
+          const pushedFp = pushedExpFingerprints.get(e.id);
+          if (pushedFp && pushedFp === buildExpenseSyncFingerprint(e)) {
+            return { ...e, needsSheetSync: false };
+          }
+          return e;
+        });
+
         store.lastSyncedAt = new Date().toISOString();
-        snapshotSyncedIdsFromCurrentStore();
+        store.lastSyncedSpreadsheetId = sheetId;
+
+        store.syncedDriverIds = store.drivers
+          .map((d) => normalizeSyncKey(d.id))
+          .filter((k) => k && pushedDriverIds.has(k));
+        store.syncedVehicleIds = store.vehicles
+          .map((v) => normalizeSyncKey(v.id))
+          .filter((k) => k && pushedVehicleIds.has(k));
+        store.syncedRouteIds = store.routes
+          .map((r) => normalizeSyncKey(r.id))
+          .filter((k) => k && pushedRouteIds.has(k));
+        store.syncedFleetCardIds = store.fleetCards
+          .map((fc) => normalizeSyncKey(fc.id))
+          .filter((k) => k && pushedFleetBalances.has(k));
+        store.syncedAssignmentNos = store.assignments
+          .map((a) => normalizeSyncKey(a.noPenugasan))
+          .filter((k) => k && pushedAsgNos.has(k));
+        store.syncedExpenseIds = store.driverExpenses
+          .map((e) => normalizeSyncKey(e.id))
+          .filter((k) => k && pushedExpIds.has(k));
+
         saveStore(store);
         return true;
+      }
+      if (
+        parsed?.error &&
+        String(parsed.error).toLowerCase().includes('action tidak dikenal')
+      ) {
+        store.appsScriptBridgeStatus = 'NEEDS_SCRIPT_UPDATE';
+      } else {
+        store.appsScriptBridgeStatus = 'ERROR';
       }
       return false;
     } catch {
@@ -3671,17 +4193,20 @@ async function startServer() {
     }
   };
 
-  const pullSpreadsheetFromServerAuto = async (): Promise<{
+  const pullSpreadsheetFromServerAutoInternal = async (options?: {
+    pushPendingChanges?: boolean;
+  }): Promise<{
     ok: boolean;
     source?: 'APPS_SCRIPT' | 'LIVE_CSV';
     hasSheetDeletionsToPrune?: boolean;
     mutated?: boolean;
   }> => {
     const sheetId = String(store.spreadsheetId || '').trim();
-    if (!sheetId || serverSheetSyncInFlight) {
+    if (!sheetId) {
       return { ok: false };
     }
-    serverSheetSyncInFlight = true;
+    const shouldPushPending = options?.pushPendingChanges !== false;
+
     try {
       const bridgeUrl = String(store.appsScriptUrl || '').trim();
       if (bridgeUrl && /^https:\/\/script\.google\.com\//i.test(bridgeUrl)) {
@@ -3700,9 +4225,17 @@ async function startServer() {
           );
           if (pullRes.ok) {
             const rawText = await pullRes.text();
-            if (!rawText.trim().startsWith('<')) {
+            if (rawText.trim().startsWith('<')) {
+              const isGoogleLoginHtml =
+                rawText.includes('accounts.google.com') ||
+                rawText.includes('ServiceLogin');
+              store.appsScriptBridgeStatus = isGoogleLoginHtml
+                ? 'AUTH_BLOCKED_HTML'
+                : 'NEEDS_SCRIPT_UPDATE';
+            } else {
               const bridgeJson = JSON.parse(rawText) as {
                 ok?: boolean;
+                error?: string;
                 title?: string;
                 Master_Driver?: string[][];
                 Master_Armada?: string[][];
@@ -3713,6 +4246,7 @@ async function startServer() {
                 Konfigurasi?: string[][];
               };
               if (bridgeJson?.ok && Array.isArray(bridgeJson.Surat_Tugas)) {
+                store.appsScriptBridgeStatus = 'ACTIVE';
                 const payload = parseRawTabMatricesToPayload(sheetId, {
                   driverAll: bridgeJson.Master_Driver || [],
                   vehicleAll: bridgeJson.Master_Armada || [],
@@ -3728,12 +4262,19 @@ async function startServer() {
                   title: bridgeJson.title,
                 });
                 const rec = reconcilePulledSheetsIntoStore(payload);
-                if (
+                const hasAnyLocalDirty =
                   rec.hasPendingDriverUpdates ||
                   rec.hasPendingMasterUpdates ||
-                  rec.hasCustomPinToPush
-                ) {
-                  await pushStateViaAppsScriptBridge();
+                  rec.hasCustomPinToPush ||
+                  store.pendingAssignmentDeletionPush ||
+                  store.pendingExpenseDeletionPush ||
+                  store.pendingMasterDeletionPush ||
+                  store.assignments.some((a) => a.needsSheetSync) ||
+                  store.driverExpenses.some((e) => e.needsSheetSync) ||
+                  (store.unsyncedFleetCardIds?.length || 0) > 0;
+
+                if (shouldPushPending && hasAnyLocalDirty) {
+                  await pushStateViaAppsScriptBridgeInternal();
                 } else {
                   saveStore(store);
                 }
@@ -3750,11 +4291,16 @@ async function startServer() {
                   mutated: rec.mutated,
                 };
               }
+              store.appsScriptBridgeStatus = 'NEEDS_SCRIPT_UPDATE';
             }
+          } else if (pullRes.status === 401 || pullRes.status === 403) {
+            store.appsScriptBridgeStatus = 'AUTH_BLOCKED_HTML';
           }
         } catch {
           // Fall back to direct gviz CSV check below
         }
+      } else {
+        store.appsScriptBridgeStatus = 'NONE';
       }
 
       // Direct Zero-Auth Live CSV Pull (`gviz/tq?tqx=out:csv`) when Sheet allows link viewing
@@ -3842,7 +4388,19 @@ async function startServer() {
         configAll: configAll || [],
       });
       const rec = reconcilePulledSheetsIntoStore(payload);
-      saveStore(store);
+      if (
+        shouldPushPending &&
+        String(store.appsScriptUrl || '').trim() &&
+        (rec.hasPendingDriverUpdates ||
+          rec.hasPendingMasterUpdates ||
+          rec.hasCustomPinToPush ||
+          store.assignments.some((a) => a.needsSheetSync) ||
+          store.driverExpenses.some((e) => e.needsSheetSync))
+      ) {
+        await pushStateViaAppsScriptBridgeInternal();
+      } else {
+        saveStore(store);
+      }
       if (rec.mutated) {
         broadcastRealtime({
           type: 'state:sync',
@@ -3857,22 +4415,57 @@ async function startServer() {
       };
     } catch {
       return { ok: false };
-    } finally {
-      serverSheetSyncInFlight = false;
     }
   };
+
+  const pullSpreadsheetFromServerAuto = () =>
+    enqueueSheetSync(() =>
+      pullSpreadsheetFromServerAutoInternal({ pushPendingChanges: true })
+    );
+
+  const syncAndPushStoreToSheets = async (
+    timeoutMs = 9500
+  ): Promise<boolean> => {
+    const bridgeUrl = String(store.appsScriptUrl || '').trim();
+    const sheetId = String(store.spreadsheetId || '').trim();
+    if (!bridgeUrl || !sheetId) return false;
+
+    const syncJob = enqueueSheetSync(async () => {
+      await pullSpreadsheetFromServerAutoInternal({
+        pushPendingChanges: false,
+      });
+      return await pushStateViaAppsScriptBridgeInternal();
+    });
+
+    if (timeoutMs <= 0) {
+      return syncJob;
+    }
+
+    return Promise.race([
+      syncJob,
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  };
+
+  triggerSerializedSheetPull = async () => {
+    const out = await enqueueSheetSync(() =>
+      pullSpreadsheetFromServerAutoInternal({ pushPendingChanges: false })
+    );
+    return out.ok;
+  };
+  triggerSerializedSheetSyncAndPush = syncAndPushStoreToSheets;
 
   const triggerServerAppsScriptPushIfConfigured = (): void => {
     const bridgeUrl = String(store.appsScriptUrl || '').trim();
     if (!bridgeUrl || !store.spreadsheetId) return;
-    void (async () => {
-      await pullSpreadsheetFromServerAuto();
-      await pushStateViaAppsScriptBridge();
-    })();
+    void syncAndPushStoreToSheets(15000);
   };
 
   // Endpoint for immediate zero-click Spreadsheet reconciliation on F5 / Driver Portal refresh
-  app.post('/api/sheets/auto-sync', async (_req, res) => {
+  app.post('/api/sheets/auto-sync', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
     const syncOut = await pullSpreadsheetFromServerAuto();
     res.json({
       success: syncOut.ok,
@@ -4184,10 +4777,20 @@ async function startServer() {
       return 0;
     };
 
+    const syncedAsgNoSet = new Set(
+      (store.syncedAssignmentNos || []).map(normalizeSyncKey).filter(Boolean)
+    );
+    const syncedExpIdSet = new Set(
+      (store.syncedExpenseIds || []).map(normalizeSyncKey).filter(Boolean)
+    );
+
     if (Array.isArray(assignments)) {
       const localById = new Map<string, AssignmentRecord>();
+      const localByNo = new Map<string, AssignmentRecord>();
       for (const localItem of store.assignments) {
         localById.set(localItem.id, localItem);
+        const normLocalNo = normalizeSyncKey(localItem.noPenugasan);
+        if (normLocalNo) localByNo.set(normLocalNo, localItem);
       }
 
       const usedLocalIds = new Set<string>();
@@ -4203,12 +4806,30 @@ async function startServer() {
           hasExtraneousCloudDocsToPrune = true;
           continue;
         }
-        const existingLocal = localById.get(cloudItem.id);
+        const normCloudNo = normalizeSyncKey(cloudItem.noPenugasan);
+        const existingLocal =
+          localById.get(cloudItem.id) ||
+          (normCloudNo ? localByNo.get(normCloudNo) : undefined);
+
         if (existingLocal) {
           usedLocalIds.add(existingLocal.id);
+          const isConfirmedInSheet = syncedAsgNoSet.has(
+            normCloudNo || normalizeSyncKey(existingLocal.noPenugasan)
+          );
+          const cloudProgressed =
+            statusRank(cloudItem.status) > statusRank(existingLocal.status) ||
+            (Boolean(cloudItem.departureData?.timestamp) &&
+              !existingLocal.departureData?.timestamp) ||
+            (Boolean(cloudItem.deliveredData?.timestamp) &&
+              !existingLocal.deliveredData?.timestamp) ||
+            (Boolean(cloudItem.handoverData?.timestamp) &&
+              !existingLocal.handoverData?.timestamp) ||
+            (Boolean(cloudItem.deliveredAt) && !existingLocal.deliveredAt);
+
           if (
-            existingLocal.needsSheetSync ||
-            statusRank(existingLocal.status) > statusRank(cloudItem.status)
+            !cloudProgressed &&
+            (existingLocal.needsSheetSync ||
+              statusRank(existingLocal.status) > statusRank(cloudItem.status))
           ) {
             hasLocalUpdatesForCloud = true;
             const mergedPendingDrive = mergeDriveMediaLinks(
@@ -4222,6 +4843,9 @@ async function startServer() {
                 existingLocal.driveFolderUrl ||
                 cloudItem.driveFolderUrl,
               driveMedia: mergedPendingDrive,
+              needsSheetSync: Boolean(
+                existingLocal.needsSheetSync || !isConfirmedInSheet
+              ),
             });
             continue;
           }
@@ -4231,6 +4855,7 @@ async function startServer() {
           );
           mergedAssignments.push({
             ...cloudItem,
+            id: existingLocal.id || cloudItem.id,
             createdAt: existingLocal.createdAt || cloudItem.createdAt,
             deliveredAt: cloudItem.deliveredAt || existingLocal.deliveredAt,
             beratMuatan: cloudItem.beratMuatan || existingLocal.beratMuatan,
@@ -4257,15 +4882,33 @@ async function startServer() {
                     existingLocal.departureData?.fotoSuhuBerangkat,
                 }
               : existingLocal.departureData,
+            deliveredData: cloudItem.deliveredData
+              ? {
+                  ...cloudItem.deliveredData,
+                  jenisKendaraan:
+                    cloudItem.deliveredData.jenisKendaraan ||
+                    existingLocal.deliveredData?.jenisKendaraan,
+                  fotoOdometerSampai:
+                    cloudItem.deliveredData.fotoOdometerSampai ||
+                    existingLocal.deliveredData?.fotoOdometerSampai,
+                  fotoSuhuSampai:
+                    cloudItem.deliveredData.fotoSuhuSampai ||
+                    existingLocal.deliveredData?.fotoSuhuSampai,
+                }
+              : existingLocal.deliveredData,
             handoverData: cloudItem.handoverData
               ? {
                   ...cloudItem.handoverData,
                   fotoOdometerSerahTerima:
                     cloudItem.handoverData.fotoOdometerSerahTerima ||
-                    existingLocal.handoverData?.fotoOdometerSerahTerima,
+                    existingLocal.handoverData?.fotoOdometerSerahTerima ||
+                    cloudItem.deliveredData?.fotoOdometerSampai ||
+                    existingLocal.deliveredData?.fotoOdometerSampai,
                   fotoSuhuSerahTerima:
                     cloudItem.handoverData.fotoSuhuSerahTerima ||
-                    existingLocal.handoverData?.fotoSuhuSerahTerima,
+                    existingLocal.handoverData?.fotoSuhuSerahTerima ||
+                    cloudItem.deliveredData?.fotoSuhuSampai ||
+                    existingLocal.deliveredData?.fotoSuhuSampai,
                   fotoBuktiSerahTerima:
                     cloudItem.handoverData.fotoBuktiSerahTerima ||
                     existingLocal.handoverData?.fotoBuktiSerahTerima,
@@ -4274,12 +4917,22 @@ async function startServer() {
                     existingLocal.handoverData?.tandaTanganPenerima,
                 }
               : existingLocal.handoverData,
-            needsSheetSync: existingLocal.needsSheetSync ?? false,
+            needsSheetSync: Boolean(
+              existingLocal.needsSheetSync ||
+                cloudProgressed ||
+                !isConfirmedInSheet ||
+                cloudItem.needsSheetSync
+            ),
           });
         } else {
+          const isConfirmedInSheet = normCloudNo
+            ? syncedAsgNoSet.has(normCloudNo)
+            : false;
           mergedAssignments.push({
             ...cloudItem,
-            needsSheetSync: false,
+            needsSheetSync: Boolean(
+              !isConfirmedInSheet || cloudItem.needsSheetSync
+            ),
           });
         }
       }
@@ -4293,14 +4946,54 @@ async function startServer() {
         }
       } else {
         for (const [localId, localItem] of localById.entries()) {
-          if (!usedLocalIds.has(localId) && localItem.needsSheetSync) {
-            mergedAssignments.push(localItem);
+          const normLocalNo = normalizeSyncKey(localItem.noPenugasan);
+          const neverConfirmedInSheet = !syncedAsgNoSet.has(normLocalNo);
+          if (
+            !usedLocalIds.has(localId) &&
+            (localItem.needsSheetSync || neverConfirmedInSheet)
+          ) {
+            mergedAssignments.push({
+              ...localItem,
+              needsSheetSync: true,
+            });
             hasLocalUpdatesForCloud = true;
           }
         }
       }
 
       store.assignments = mergedAssignments;
+
+      // Keep vehicle operational status aligned with active Surat Tugas
+      const activePlates = new Set(
+        store.assignments
+          .filter(
+            (a) =>
+              a.status === 'Menunggu Berangkat' ||
+              a.status === 'Dalam Perjalanan' ||
+              a.status === 'Delivered'
+          )
+          .map((a) => normalizeSyncKey(a.plateNumber))
+          .filter(Boolean)
+      );
+      const activeVehIds = new Set(
+        store.assignments
+          .filter(
+            (a) =>
+              a.status === 'Menunggu Berangkat' ||
+              a.status === 'Dalam Perjalanan' ||
+              a.status === 'Delivered'
+          )
+          .map((a) => normalizeSyncKey(a.vehicleId))
+          .filter(Boolean)
+      );
+      store.vehicles = store.vehicles.map((v) => {
+        if (v.status === 'Perawatan') return v;
+        const isBusy =
+          activeVehIds.has(normalizeSyncKey(v.id)) ||
+          activePlates.has(normalizeSyncKey(v.plateNumber));
+        const expectedStatus = isBusy ? 'Dalam Tugas' : 'Siap Jalan';
+        return v.status === expectedStatus ? v : { ...v, status: expectedStatus };
+      });
     }
 
     if (Array.isArray(driverExpenses)) {
@@ -4316,6 +5009,9 @@ async function startServer() {
           hasExtraneousCloudDocsToPrune = true;
           continue;
         }
+        const isExpConfirmedInSheet = syncedExpIdSet.has(
+          normalizeSyncKey(cloudExp.id)
+        );
         const existingLocal = localExpById.get(cloudExp.id);
         if (existingLocal) {
           usedLocalExpIds.add(existingLocal.id);
@@ -4327,6 +5023,7 @@ async function startServer() {
                 existingLocal.fotoStrukBbmUrl || cloudExp.fotoStrukBbmUrl,
               fotoStrukTolUrl:
                 existingLocal.fotoStrukTolUrl || cloudExp.fotoStrukTolUrl,
+              needsSheetSync: true,
             });
             continue;
           }
@@ -4344,12 +5041,18 @@ async function startServer() {
               cloudExp.fotoStrukTol || existingLocal.fotoStrukTol,
             fotoStrukTolUrl:
               cloudExp.fotoStrukTolUrl || existingLocal.fotoStrukTolUrl,
-            needsSheetSync: existingLocal.needsSheetSync ?? false,
+            needsSheetSync: Boolean(
+              existingLocal.needsSheetSync ||
+                !isExpConfirmedInSheet ||
+                cloudExp.needsSheetSync
+            ),
           });
         } else {
           mergedExpenses.push({
             ...cloudExp,
-            needsSheetSync: false,
+            needsSheetSync: Boolean(
+              !isExpConfirmedInSheet || cloudExp.needsSheetSync
+            ),
           });
         }
       }
@@ -4363,8 +5066,17 @@ async function startServer() {
         }
       } else {
         for (const [localId, localExp] of localExpById.entries()) {
-          if (!usedLocalExpIds.has(localId) && localExp.needsSheetSync) {
-            mergedExpenses.push(localExp);
+          const neverConfirmedExp = !syncedExpIdSet.has(
+            normalizeSyncKey(localExp.id)
+          );
+          if (
+            !usedLocalExpIds.has(localId) &&
+            (localExp.needsSheetSync || neverConfirmedExp)
+          ) {
+            mergedExpenses.push({
+              ...localExp,
+              needsSheetSync: true,
+            });
             hasLocalUpdatesForCloud = true;
           }
         }
@@ -4522,13 +5234,23 @@ async function startServer() {
         break;
       case 'odo-serahterima':
       case 'foto-odometer-serahterima':
-        rawDataUrl = assignment.handoverData?.fotoOdometerSerahTerima || '';
+      case 'odo-sampai':
+      case 'foto-odometer-sampai':
+        rawDataUrl =
+          assignment.handoverData?.fotoOdometerSerahTerima ||
+          assignment.deliveredData?.fotoOdometerSampai ||
+          '';
         fallbackDriveUrl =
           assignment.driveMedia?.fotoOdometerSerahTerimaUrl || '';
         break;
       case 'suhu-serahterima':
       case 'foto-suhu-serahterima':
-        rawDataUrl = assignment.handoverData?.fotoSuhuSerahTerima || '';
+      case 'suhu-sampai':
+      case 'foto-suhu-sampai':
+        rawDataUrl =
+          assignment.handoverData?.fotoSuhuSerahTerima ||
+          assignment.deliveredData?.fotoSuhuSampai ||
+          '';
         fallbackDriveUrl =
           assignment.driveMedia?.fotoSuhuSerahTerimaUrl || '';
         break;
@@ -5221,6 +5943,8 @@ async function startServer() {
 
   // Data Pengeluaran Driver (Sheet Pengeluaran_Driver) + Auto Fleet Card Balance Deduction + Receipt Media
   app.post('/api/driver-expenses', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
     const driverId = String(req.body?.driverId || '').trim().toUpperCase();
     const driverName = String(req.body?.driverName || '').trim();
     const plateNumber = String(req.body?.plateNumber || '').trim().toUpperCase();
@@ -5252,7 +5976,16 @@ async function startServer() {
       return;
     }
 
-    const matchedCardIdx = store.fleetCards.findIndex(
+    if (
+      (!store.lastSyncedAt || store.fleetCards.length === 0) &&
+      String(store.spreadsheetId || '').trim()
+    ) {
+      await enqueueSheetSync(() =>
+        pullSpreadsheetFromServerAutoInternal({ pushPendingChanges: false })
+      );
+    }
+
+    let matchedCardIdx = store.fleetCards.findIndex(
       (fc) =>
         (rawFleetCardId &&
           fc.id.toLowerCase() === rawFleetCardId.toLowerCase()) ||
@@ -5260,6 +5993,26 @@ async function startServer() {
           fc.cardNumber.replace(/\s+/g, '').toLowerCase() ===
             rawFleetCardNumber.replace(/\s+/g, '').toLowerCase())
     );
+
+    const cardSnap = req.body?.fleetCardSnapshot as
+      | Partial<FleetCardRecord>
+      | undefined;
+    if (
+      matchedCardIdx === -1 &&
+      cardSnap &&
+      cardSnap.id &&
+      cardSnap.cardNumber
+    ) {
+      const snapId = String(cardSnap.id).trim().toUpperCase();
+      if (!isKeyTombstoned('fleetCards', snapId)) {
+        store.fleetCards.push({
+          id: snapId,
+          cardNumber: String(cardSnap.cardNumber).trim(),
+          balance: Math.round(Number(cardSnap.balance) || 0),
+        });
+        matchedCardIdx = store.fleetCards.length - 1;
+      }
+    }
 
     const resolvedCard =
       matchedCardIdx >= 0 ? store.fleetCards[matchedCardIdx] : undefined;
@@ -5291,9 +6044,16 @@ async function startServer() {
         (e) => e.id.toLowerCase() === requestedExpenseId.toLowerCase()
       );
       if (existingExp) {
+        if (existingExp.needsSheetSync) {
+          await syncAndPushStoreToSheets(9500);
+        }
+        const refreshedExp =
+          store.driverExpenses.find(
+            (e) => e.id.toLowerCase() === requestedExpenseId.toLowerCase()
+          ) || existingExp;
         res.json({
           success: true,
-          expense: existingExp,
+          expense: refreshedExp,
           updatedFleetCard:
             matchedCardIdx >= 0 ? store.fleetCards[matchedCardIdx] : null,
           state: buildPublicState(),
@@ -5357,7 +6117,21 @@ async function startServer() {
     removeDeletedTombstones('driverExpenses', [createdExpense.id]);
     store.driverExpenses.unshift(createdExpense);
     saveStore(store);
-    triggerServerAppsScriptPushIfConfigured();
+
+    // Bounded wait on serialized Pull-Then-Push (background queue continues automatically if Apps Script takes >4.5s)
+    await syncAndPushStoreToSheets(4500);
+
+    const latestExpense =
+      store.driverExpenses.find((e) => e.id === createdExpense.id) ||
+      createdExpense;
+    const latestCard =
+      resolvedCardId && resolvedCardId !== 'MANUAL'
+        ? store.fleetCards.find(
+            (fc) => fc.id.toLowerCase() === resolvedCardId.toLowerCase()
+          ) || null
+        : matchedCardIdx >= 0
+        ? store.fleetCards[matchedCardIdx] || null
+        : null;
 
     const publicState = broadcastRealtime({
       type: 'state:sync',
@@ -5367,9 +6141,8 @@ async function startServer() {
 
     res.json({
       success: true,
-      expense: createdExpense,
-      updatedFleetCard:
-        matchedCardIdx >= 0 ? store.fleetCards[matchedCardIdx] : null,
+      expense: latestExpense,
+      updatedFleetCard: latestCard,
       state: publicState,
     });
   });
@@ -5416,7 +6189,7 @@ async function startServer() {
     );
     store.pendingExpenseDeletionPush = true;
     saveStore(store);
-    triggerServerAppsScriptPushIfConfigured();
+    await syncAndPushStoreToSheets(8500);
 
     const publicState = broadcastRealtime({
       type: 'state:sync',
@@ -5603,11 +6376,10 @@ async function startServer() {
       newAssignment.id,
       newAssignment.noPenugasan,
     ]);
+    store.pendingAssignmentDeletionPush = false;
     store.lastSequence = nextSeq;
     store.assignments.push(newAssignment);
     saveStore(store);
-    triggerServerAppsScriptPushIfConfigured();
-
     const routeObj = store.routes.find((r) => r.id === newAssignment.routeId);
     const waMessage = formatDriverRealtimeWhatsAppMessage(
       newAssignment,
@@ -5621,21 +6393,24 @@ async function startServer() {
       routeObj?.picPhone || '',
     ].filter(Boolean);
 
-    const notification = await dispatchWhatsAppNetwork({
-      eventType: 'SURAT_TUGAS',
-      noPenugasan: newAssignment.noPenugasan,
-      assignmentId: newAssignment.id,
-      destination: newAssignment.destination,
-      actorRole: 'ADMIN',
-      summary: `Tugas baru diterbitkan untuk ${newAssignment.driverName} (${newAssignment.plateNumber}) menuju ${newAssignment.destination}.`,
-      readByAdmin: false,
-      driverId: newAssignment.driverId,
-      driverName: newAssignment.driverName,
-      plateNumber: newAssignment.plateNumber,
-      driverPhone: resolvedDriverPhone,
-      targets,
-      message: waMessage,
-    });
+    const [notification] = await Promise.all([
+      dispatchWhatsAppNetwork({
+        eventType: 'SURAT_TUGAS',
+        noPenugasan: newAssignment.noPenugasan,
+        assignmentId: newAssignment.id,
+        destination: newAssignment.destination,
+        actorRole: 'ADMIN',
+        summary: `Tugas baru diterbitkan untuk ${newAssignment.driverName} (${newAssignment.plateNumber}) menuju ${newAssignment.destination}.`,
+        readByAdmin: false,
+        driverId: newAssignment.driverId,
+        driverName: newAssignment.driverName,
+        plateNumber: newAssignment.plateNumber,
+        driverPhone: resolvedDriverPhone,
+        targets,
+        message: waMessage,
+      }),
+      syncAndPushStoreToSheets(4500),
+    ]);
 
     const publicState = broadcastRealtime({
       type: 'assignment:created',
@@ -5883,20 +6658,23 @@ async function startServer() {
       });
     }
 
-    triggerServerAppsScriptPushIfConfigured();
+    await syncAndPushStoreToSheets(8500);
+
+    const latestUpdated =
+      store.assignments.find((a) => a.id === updated.id) || updated;
 
     const publicState = broadcastRealtime({
       type: 'assignment:updated',
       clientId: getRequestClientId(req),
       actorRole: 'ADMIN',
       previousStatus,
-      assignment: updated,
+      assignment: latestUpdated,
       notification,
     });
 
     res.json({
       success: true,
-      assignment: updated,
+      assignment: latestUpdated,
       notification,
       state: publicState,
     });
@@ -5922,7 +6700,7 @@ async function startServer() {
       store.lastSequence = 0;
     }
     saveStore(store);
-    triggerServerAppsScriptPushIfConfigured();
+    await syncAndPushStoreToSheets(8500);
 
     const publicState = broadcastRealtime({
       type: 'assignment:deleted',
@@ -5936,13 +6714,40 @@ async function startServer() {
     });
   });
 
+  const resolveAssignmentIndexForDriverReport = async (
+    targetId: string,
+    rawSnapshot: Partial<AssignmentRecord> | undefined
+  ): Promise<number> => {
+    const candNo = normalizeSyncKey(rawSnapshot?.noPenugasan || targetId);
+    const findInStore = () =>
+      store.assignments.findIndex(
+        (a) =>
+          a.id === targetId ||
+          (candNo && normalizeSyncKey(a.noPenugasan) === candNo)
+      );
+
+    let idx = findInStore();
+    if (idx === -1 && String(store.spreadsheetId || '').trim()) {
+      await enqueueSheetSync(() =>
+        pullSpreadsheetFromServerAutoInternal({ pushPendingChanges: false })
+      );
+      idx = findInStore();
+    }
+    if (idx === -1 && rawSnapshot) {
+      idx = hydrateMissingAssignmentSnapshot(rawSnapshot, true);
+    }
+    return idx;
+  };
+
   // Role Driver: Submit Cold Chain Departure Data + Real-time Timestamp + Photos + Automatic WA
   app.post('/api/assignments/:id/departure', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
     const targetId = String(req.params.id || '').trim();
-    let idx = store.assignments.findIndex((a) => a.id === targetId);
-    if (idx === -1 && req.body?.assignmentSnapshot) {
-      idx = hydrateMissingAssignmentSnapshot(req.body.assignmentSnapshot);
-    }
+    const idx = await resolveAssignmentIndexForDriverReport(
+      targetId,
+      req.body?.assignmentSnapshot
+    );
     if (idx === -1) {
       res.status(404).json({ error: 'Surat Tugas tidak ditemukan.' });
       return;
@@ -6037,6 +6842,7 @@ async function startServer() {
     );
     if (vehicleIdx !== -1) {
       store.vehicles[vehicleIdx].status = 'Dalam Tugas';
+      markMasterItemUnsynced('vehicles', store.vehicles[vehicleIdx].id);
     }
 
     saveStore(store);
@@ -6054,48 +6860,54 @@ async function startServer() {
       store.whatsappGroupName
     );
 
-    const notification = await dispatchWhatsAppNetwork({
-      eventType: 'KEBERANGKATAN',
-      noPenugasan: assignment.noPenugasan,
-      assignmentId: assignment.id,
-      destination: assignment.destination,
-      actorRole: 'DRIVER',
-      summary: `${assignment.driverName} (${assignment.plateNumber}) mulai berangkat dari ${titikKeberangkatan} menuju ${assignment.destination} (KM ${kmAwal.toLocaleString('id-ID')}${suhuAwal ? `, Suhu ${suhuAwal}` : ''}).`,
-      readByAdmin: false,
-      driverId: assignment.driverId,
-      driverName: assignment.driverName,
-      plateNumber: assignment.plateNumber,
-      driverPhone: assignment.driverPhone,
-      targets,
-      message: waMessage,
-    });
+    const [notification] = await Promise.all([
+      dispatchWhatsAppNetwork({
+        eventType: 'KEBERANGKATAN',
+        noPenugasan: assignment.noPenugasan,
+        assignmentId: assignment.id,
+        destination: assignment.destination,
+        actorRole: 'DRIVER',
+        summary: `${assignment.driverName} (${assignment.plateNumber}) mulai berangkat dari ${titikKeberangkatan} menuju ${assignment.destination} (KM ${kmAwal.toLocaleString('id-ID')}${suhuAwal ? `, Suhu ${suhuAwal}` : ''}).`,
+        readByAdmin: false,
+        driverId: assignment.driverId,
+        driverName: assignment.driverName,
+        plateNumber: assignment.plateNumber,
+        driverPhone: assignment.driverPhone,
+        targets,
+        message: waMessage,
+      }),
+      syncAndPushStoreToSheets(4500),
+    ]);
 
-    triggerServerAppsScriptPushIfConfigured();
+    const latestAssignment =
+      store.assignments.find((a) => a.id === assignment.id) || assignment;
 
     const publicState = broadcastRealtime({
       type: 'assignment:updated',
       clientId: getRequestClientId(req),
       actorRole: 'DRIVER',
       previousStatus,
-      assignment,
+      assignment: latestAssignment,
       notification,
     });
 
     res.json({
       success: true,
-      assignment,
+      assignment: latestAssignment,
       notification,
       state: publicState,
     });
   });
 
-  // Role Driver: Confirm Arrival at Destination ('Delivered') + Real-Time Admin Toast & Driver WA
+  // Role Driver: Submit Arrival Inspection Data ('Delivered / Sampai') + Real-Time Admin Toast & Driver WA
   app.post('/api/assignments/:id/delivered', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
     const targetId = String(req.params.id || '').trim();
-    let idx = store.assignments.findIndex((a) => a.id === targetId);
-    if (idx === -1 && req.body?.assignmentSnapshot) {
-      idx = hydrateMissingAssignmentSnapshot(req.body.assignmentSnapshot);
-    }
+    const idx = await resolveAssignmentIndexForDriverReport(
+      targetId,
+      req.body?.assignmentSnapshot
+    );
     if (idx === -1) {
       res.status(404).json({ error: 'Surat Tugas tidak ditemukan.' });
       return;
@@ -6103,7 +6915,80 @@ async function startServer() {
 
     const assignment = store.assignments[idx];
     const previousStatus = assignment.status;
-    const catatanTiba = String(req.body?.catatanTiba || '').trim();
+    const effectiveJenisKendaraan: 'Mobil Pendingin' | 'Non Pendingin' =
+      assignment.departureData?.jenisKendaraan === 'Non Pendingin' ||
+      (assignment.departureData?.jenisKendaraan === undefined &&
+        req.body?.jenisKendaraan === 'Non Pendingin')
+        ? 'Non Pendingin'
+        : 'Mobil Pendingin';
+    const isPendingin = effectiveJenisKendaraan === 'Mobil Pendingin';
+
+    const hasExplicitKmSampai =
+      req.body?.kmSampai !== undefined &&
+      req.body?.kmSampai !== null &&
+      String(req.body?.kmSampai).trim() !== '';
+    const kmSampai = hasExplicitKmSampai
+      ? Number(req.body?.kmSampai)
+      : assignment.deliveredData?.kmSampai ??
+        assignment.departureData?.kmAwal ??
+        0;
+
+    if (hasExplicitKmSampai) {
+      if (!Number.isFinite(kmSampai) || kmSampai < 0) {
+        res.status(400).json({
+          error: 'Odometer KM Sampai wajib diisi dengan angka valid.',
+        });
+        return;
+      }
+      const kmAwal = assignment.departureData?.kmAwal ?? 0;
+      if (kmAwal > 0 && kmSampai < kmAwal) {
+        res.status(400).json({
+          error: `KM Sampai (${kmSampai}) tidak boleh lebih kecil dari KM Awal (${kmAwal}).`,
+        });
+        return;
+      }
+    }
+
+    const suhuSampai = isPendingin
+      ? String(
+          req.body?.suhuSampai ?? assignment.deliveredData?.suhuSampai ?? ''
+        ).trim()
+      : '';
+    if (hasExplicitKmSampai && isPendingin && !suhuSampai) {
+      res.status(400).json({
+        error: 'Suhu Serah Sampai (°C) wajib diisi untuk Mobil Pendingin.',
+      });
+      return;
+    }
+
+    const bbmSampai = String(
+      req.body?.bbmSampai ||
+        assignment.deliveredData?.bbmSampai ||
+        '1/2 Tangki'
+    ).trim();
+    const kondisiSampai = String(
+      req.body?.kondisiSampai ||
+        assignment.deliveredData?.kondisiSampai ||
+        (isPendingin
+          ? 'Suhu & Segel Utuh - Lengkap'
+          : 'Segel & Muatan Utuh - Lengkap')
+    ).trim();
+    const catatanSampai = String(
+      req.body?.catatanSampai ?? req.body?.catatanTiba ?? ''
+    ).trim();
+    const fotoOdometerSampai = String(
+      req.body?.fotoOdometerSampai ||
+        assignment.deliveredData?.fotoOdometerSampai ||
+        ''
+    ).trim();
+    const fotoSuhuSampai = isPendingin
+      ? String(
+          req.body?.fotoSuhuSampai ||
+            assignment.deliveredData?.fotoSuhuSampai ||
+            ''
+        ).trim()
+      : '';
+
     const nowIso = new Date().toISOString();
 
     assignment.driverPhone = resolveDriverPhone(
@@ -6112,10 +6997,33 @@ async function startServer() {
     );
     assignment.status = 'Delivered';
     assignment.deliveredAt = nowIso;
-    if (catatanTiba) {
-      assignment.notes = assignment.notes
-        ? `${assignment.notes} | Tiba: ${catatanTiba}`
-        : `Tiba: ${catatanTiba}`;
+    if (assignment.departureData && !assignment.departureData.jenisKendaraan) {
+      assignment.departureData.jenisKendaraan = effectiveJenisKendaraan;
+    }
+    assignment.deliveredData = {
+      timestamp: nowIso,
+      jenisKendaraan: effectiveJenisKendaraan,
+      kmSampai,
+      suhuSampai,
+      bbmSampai,
+      kondisiSampai,
+      catatanSampai,
+      fotoOdometerSampai: fotoOdometerSampai || undefined,
+      fotoSuhuSampai: isPendingin && fotoSuhuSampai ? fotoSuhuSampai : undefined,
+    };
+    if (
+      assignment.driveMedia &&
+      (req.body?.fotoOdometerSampai || req.body?.fotoSuhuSampai)
+    ) {
+      assignment.driveMedia = {
+        ...assignment.driveMedia,
+        fotoOdometerSerahTerimaUrl: req.body?.fotoOdometerSampai
+          ? undefined
+          : assignment.driveMedia.fotoOdometerSerahTerimaUrl,
+        fotoSuhuSerahTerimaUrl: req.body?.fotoSuhuSampai
+          ? undefined
+          : assignment.driveMedia.fotoSuhuSerahTerimaUrl,
+      };
     }
     assignment.needsSheetSync = true;
 
@@ -6134,48 +7042,54 @@ async function startServer() {
       store.whatsappGroupName
     );
 
-    const notification = await dispatchWhatsAppNetwork({
-      eventType: 'DELIVERED',
-      noPenugasan: assignment.noPenugasan,
-      assignmentId: assignment.id,
-      destination: assignment.destination,
-      actorRole: 'DRIVER',
-      summary: `${assignment.driverName} (${assignment.plateNumber}) telah tiba di lokasi tujuan ${assignment.destination}.`,
-      readByAdmin: false,
-      driverId: assignment.driverId,
-      driverName: assignment.driverName,
-      plateNumber: assignment.plateNumber,
-      driverPhone: assignment.driverPhone,
-      targets,
-      message: waMessage,
-    });
+    const [notification] = await Promise.all([
+      dispatchWhatsAppNetwork({
+        eventType: 'DELIVERED',
+        noPenugasan: assignment.noPenugasan,
+        assignmentId: assignment.id,
+        destination: assignment.destination,
+        actorRole: 'DRIVER',
+        summary: `${assignment.driverName} (${assignment.plateNumber}) tiba di ${assignment.destination} (KM ${kmSampai.toLocaleString('id-ID')}${suhuSampai ? `, Suhu ${suhuSampai}` : ''}).`,
+        readByAdmin: false,
+        driverId: assignment.driverId,
+        driverName: assignment.driverName,
+        plateNumber: assignment.plateNumber,
+        driverPhone: assignment.driverPhone,
+        targets,
+        message: waMessage,
+      }),
+      syncAndPushStoreToSheets(4500),
+    ]);
 
-    triggerServerAppsScriptPushIfConfigured();
+    const latestAssignment =
+      store.assignments.find((a) => a.id === assignment.id) || assignment;
 
     const publicState = broadcastRealtime({
       type: 'assignment:updated',
       clientId: getRequestClientId(req),
       actorRole: 'DRIVER',
       previousStatus,
-      assignment,
+      assignment: latestAssignment,
       notification,
     });
 
     res.json({
       success: true,
-      assignment,
+      assignment: latestAssignment,
       notification,
       state: publicState,
     });
   });
 
-  // Role Driver: Submit Cold Chain Handover Data ('Handover') + Real-time Timestamp + Photos + Signature + Automatic WA
+  // Role Driver: Submit Berita Acara Serah Terima ('Handover') + Signature + Photo Proof + Automatic WA
   app.post('/api/assignments/:id/handover', async (req, res) => {
+    adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
+
     const targetId = String(req.params.id || '').trim();
-    let idx = store.assignments.findIndex((a) => a.id === targetId);
-    if (idx === -1 && req.body?.assignmentSnapshot) {
-      idx = hydrateMissingAssignmentSnapshot(req.body.assignmentSnapshot);
-    }
+    const idx = await resolveAssignmentIndexForDriverReport(
+      targetId,
+      req.body?.assignmentSnapshot
+    );
     if (idx === -1) {
       res.status(404).json({ error: 'Surat Tugas tidak ditemukan.' });
       return;
@@ -6185,20 +7099,40 @@ async function startServer() {
     const previousStatus = assignment.status;
     const effectiveJenisKendaraan: 'Mobil Pendingin' | 'Non Pendingin' =
       assignment.departureData?.jenisKendaraan === 'Non Pendingin' ||
+      assignment.deliveredData?.jenisKendaraan === 'Non Pendingin' ||
       (assignment.departureData?.jenisKendaraan === undefined &&
         req.body?.jenisKendaraan === 'Non Pendingin')
         ? 'Non Pendingin'
         : 'Mobil Pendingin';
     const isPendingin = effectiveJenisKendaraan === 'Mobil Pendingin';
 
-    const kmAkhir = Number(req.body?.kmAkhir);
+    const rawKmAkhir =
+      req.body?.kmAkhir !== undefined &&
+      req.body?.kmAkhir !== null &&
+      String(req.body?.kmAkhir).trim() !== ''
+        ? Number(req.body?.kmAkhir)
+        : assignment.deliveredData?.kmSampai ??
+          assignment.departureData?.kmAwal ??
+          0;
+    const kmAkhir = Number.isFinite(rawKmAkhir) && rawKmAkhir >= 0 ? rawKmAkhir : 0;
+
     const suhuAkhir = isPendingin
-      ? String(req.body?.suhuAkhir || '').trim()
+      ? String(
+          req.body?.suhuAkhir ||
+            assignment.deliveredData?.suhuSampai ||
+            assignment.departureData?.suhuAwal ||
+            '-'
+        ).trim()
       : '';
-    const bbmAkhir = String(req.body?.bbmAkhir || '1/2 Tangki').trim();
+    const bbmAkhir = String(
+      req.body?.bbmAkhir ||
+        assignment.deliveredData?.bbmSampai ||
+        '1/2 Tangki'
+    ).trim();
     const penerimaNama = String(req.body?.penerimaNama || '').trim();
     const kondisiAkhir = String(
       req.body?.kondisiAkhir ||
+        assignment.deliveredData?.kondisiSampai ||
         (isPendingin
           ? 'Suhu & Segel Utuh - Lengkap'
           : 'Segel & Muatan Utuh - Lengkap')
@@ -6207,10 +7141,16 @@ async function startServer() {
       req.body?.catatanSerahTerima || ''
     ).trim();
     const fotoOdometerSerahTerima = String(
-      req.body?.fotoOdometerSerahTerima || ''
+      req.body?.fotoOdometerSerahTerima ||
+        assignment.deliveredData?.fotoOdometerSampai ||
+        ''
     ).trim();
     const fotoSuhuSerahTerima = isPendingin
-      ? String(req.body?.fotoSuhuSerahTerima || '').trim()
+      ? String(
+          req.body?.fotoSuhuSerahTerima ||
+            assignment.deliveredData?.fotoSuhuSampai ||
+            ''
+        ).trim()
       : '';
     const fotoBuktiSerahTerima = String(
       req.body?.fotoBuktiSerahTerima || ''
@@ -6219,30 +7159,15 @@ async function startServer() {
       req.body?.tandaTanganPenerima || ''
     ).trim();
 
-    if (!Number.isFinite(kmAkhir) || kmAkhir < 0) {
-      res
-        .status(400)
-        .json({ error: 'Odometer KM Akhir wajib diisi dengan angka valid.' });
-      return;
-    }
-
-    const kmAwal = assignment.departureData?.kmAwal ?? 0;
-    if (kmAwal > 0 && kmAkhir < kmAwal) {
-      res.status(400).json({
-        error: `KM Akhir (${kmAkhir}) tidak boleh lebih kecil dari KM Awal (${kmAwal}).`,
-      });
-      return;
-    }
-
     if (!penerimaNama) {
       res.status(400).json({ error: 'Nama Penerima Serah Terima wajib diisi.' });
       return;
     }
 
-    if (isPendingin && !suhuAkhir) {
+    const kmAwal = assignment.departureData?.kmAwal ?? 0;
+    if (kmAwal > 0 && kmAkhir > 0 && kmAkhir < kmAwal) {
       res.status(400).json({
-        error:
-          'Suhu Monitor Serah Terima wajib diisi manual untuk Mobil Pendingin.',
+        error: `KM Akhir (${kmAkhir}) tidak boleh lebih kecil dari KM Awal (${kmAwal}).`,
       });
       return;
     }
@@ -6254,7 +7179,7 @@ async function startServer() {
     );
     assignment.status = 'Handover';
     if (!assignment.deliveredAt) {
-      assignment.deliveredAt = nowIso;
+      assignment.deliveredAt = assignment.deliveredData?.timestamp || nowIso;
     }
     if (assignment.departureData && !assignment.departureData.jenisKendaraan) {
       assignment.departureData.jenisKendaraan = effectiveJenisKendaraan;
@@ -6275,17 +7200,17 @@ async function startServer() {
     };
     if (
       assignment.driveMedia &&
-      (fotoOdometerSerahTerima ||
-        fotoSuhuSerahTerima ||
+      (req.body?.fotoOdometerSerahTerima ||
+        req.body?.fotoSuhuSerahTerima ||
         fotoBuktiSerahTerima ||
         tandaTanganPenerima)
     ) {
       assignment.driveMedia = {
         ...assignment.driveMedia,
-        fotoOdometerSerahTerimaUrl: fotoOdometerSerahTerima
+        fotoOdometerSerahTerimaUrl: req.body?.fotoOdometerSerahTerima
           ? undefined
           : assignment.driveMedia.fotoOdometerSerahTerimaUrl,
-        fotoSuhuSerahTerimaUrl: fotoSuhuSerahTerima
+        fotoSuhuSerahTerimaUrl: req.body?.fotoSuhuSerahTerima
           ? undefined
           : assignment.driveMedia.fotoSuhuSerahTerimaUrl,
         fotoBuktiSerahTerimaUrl: fotoBuktiSerahTerima
@@ -6305,6 +7230,7 @@ async function startServer() {
     );
     if (vehicleIdx !== -1) {
       store.vehicles[vehicleIdx].status = 'Siap Jalan';
+      markMasterItemUnsynced('vehicles', store.vehicles[vehicleIdx].id);
     }
 
     saveStore(store);
@@ -6322,36 +7248,40 @@ async function startServer() {
       store.whatsappGroupName
     );
 
-    const notification = await dispatchWhatsAppNetwork({
-      eventType: 'SERAH_TERIMA',
-      noPenugasan: assignment.noPenugasan,
-      assignmentId: assignment.id,
-      destination: assignment.destination,
-      actorRole: 'DRIVER',
-      summary: `Serah terima muatan ${assignment.plateNumber} oleh ${assignment.driverName} kepada ${penerimaNama} di ${assignment.destination} selesai.`,
-      readByAdmin: false,
-      driverId: assignment.driverId,
-      driverName: assignment.driverName,
-      plateNumber: assignment.plateNumber,
-      driverPhone: assignment.driverPhone,
-      targets,
-      message: waMessage,
-    });
+    const [notification] = await Promise.all([
+      dispatchWhatsAppNetwork({
+        eventType: 'SERAH_TERIMA',
+        noPenugasan: assignment.noPenugasan,
+        assignmentId: assignment.id,
+        destination: assignment.destination,
+        actorRole: 'DRIVER',
+        summary: `Serah terima muatan ${assignment.plateNumber} oleh ${assignment.driverName} kepada ${penerimaNama} di ${assignment.destination} selesai.`,
+        readByAdmin: false,
+        driverId: assignment.driverId,
+        driverName: assignment.driverName,
+        plateNumber: assignment.plateNumber,
+        driverPhone: assignment.driverPhone,
+        targets,
+        message: waMessage,
+      }),
+      syncAndPushStoreToSheets(4500),
+    ]);
 
-    triggerServerAppsScriptPushIfConfigured();
+    const latestAssignment =
+      store.assignments.find((a) => a.id === assignment.id) || assignment;
 
     const publicState = broadcastRealtime({
       type: 'assignment:updated',
       clientId: getRequestClientId(req),
       actorRole: 'DRIVER',
       previousStatus,
-      assignment,
+      assignment: latestAssignment,
       notification,
     });
 
     res.json({
       success: true,
-      assignment,
+      assignment: latestAssignment,
       notification,
       state: publicState,
     });
@@ -6618,6 +7548,9 @@ async function startServer() {
     console.log(
       `CRK Logistik Delivery Sistem (HTTP + WS /ws) listening on http://localhost:${PORT}`
     );
+    if (String(store.spreadsheetId || '').trim()) {
+      void pullSpreadsheetFromServerAuto();
+    }
   });
 }
 

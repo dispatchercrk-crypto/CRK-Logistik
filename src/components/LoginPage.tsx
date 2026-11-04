@@ -178,6 +178,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             driverId: selectedDriverId.trim(),
             pin: driverPin.trim(),
             driverSnapshot: selectedDriverObj || undefined,
+            configSnapshot: {
+              spreadsheetId: config.spreadsheetId || undefined,
+              appsScriptUrl: config.appsScriptUrl || undefined,
+            },
           }),
         }
       );

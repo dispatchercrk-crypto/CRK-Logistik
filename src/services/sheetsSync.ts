@@ -677,12 +677,22 @@ export async function pullAllFromSpreadsheet(
         const resolvedOrigin =
           parsedTitik || 'Menunggu Titik Keberangkatan Driver';
 
+        const parsedStatus = parseTaskStatus(row[17]);
+        const parsedDeliveredAt = String(row[44] || '').trim() || undefined;
         const hasDeparture =
           String(row[18] || '').trim() !== '' ||
           String(row[19] || '').trim() !== '';
-        const hasHandover =
+        const isHandoverCompleted =
+          parsedStatus === 'Handover' ||
+          parsedStatus === 'Selesai' ||
           String(row[25] || '').trim() !== '' ||
+          String(row[29] || '').trim() !== '';
+        const hasDeliveredMetrics =
+          parsedStatus === 'Delivered' ||
+          Boolean(parsedDeliveredAt) ||
           String(row[26] || '').trim() !== '';
+        const parsedEndKm =
+          Number(String(row[26] || '0').replace(/[^\d.-]/g, '')) || 0;
 
         const driveFolderUrlCol = String(row[37] || '').trim();
         const fotoOdoBerangkatUrl = String(row[38] || '').trim();
@@ -728,8 +738,8 @@ export async function pullAllFromSpreadsheet(
             (asgCbmIdx >= 0
               ? String(row[asgCbmIdx] || '').trim()
               : String(row[45] || '').trim()) || undefined,
-          status: parseTaskStatus(row[17]),
-          deliveredAt: String(row[44] || '').trim() || undefined,
+          status: parsedStatus,
+          deliveredAt: parsedDeliveredAt,
           departureData: hasDeparture
             ? {
                 timestamp: String(row[18] || ''),
@@ -747,11 +757,23 @@ export async function pullAllFromSpreadsheet(
                 catatanBerangkat: String(row[23] || ''),
               }
             : undefined,
-          handoverData: hasHandover
+          deliveredData: hasDeliveredMetrics
             ? {
-                timestamp: String(row[25] || ''),
-                kmAkhir:
-                  Number(String(row[26] || '0').replace(/[^\d.-]/g, '')) || 0,
+                timestamp: parsedDeliveredAt || String(row[25] || ''),
+                jenisKendaraan: parsedJenisKendaraan || 'Mobil Pendingin',
+                kmSampai: parsedEndKm,
+                suhuSampai: String(row[27] || ''),
+                bbmSampai: String(row[28] || ''),
+                kondisiSampai: String(row[30] || ''),
+                catatanSampai: !isHandoverCompleted
+                  ? String(row[31] || '')
+                  : undefined,
+              }
+            : undefined,
+          handoverData: isHandoverCompleted
+            ? {
+                timestamp: String(row[25] || parsedDeliveredAt || ''),
+                kmAkhir: parsedEndKm,
                 suhuAkhir: String(row[27] || ''),
                 bbmAkhir: String(row[28] || ''),
                 penerimaNama: String(row[29] || ''),
@@ -1174,12 +1196,14 @@ export async function pushAssignmentsToSpreadsheet(
     const hoMediaStatus = [
       a.driveMedia?.fotoOdometerSerahTerimaUrl
         ? 'Odo:Drive'
-        : a.handoverData?.fotoOdometerSerahTerima
+        : a.handoverData?.fotoOdometerSerahTerima ||
+          a.deliveredData?.fotoOdometerSampai
         ? 'Odo:Ada'
         : '',
       a.driveMedia?.fotoSuhuSerahTerimaUrl
         ? 'Suhu:Drive'
-        : a.handoverData?.fotoSuhuSerahTerima
+        : a.handoverData?.fotoSuhuSerahTerima ||
+          a.deliveredData?.fotoSuhuSampai
         ? 'Suhu:Ada'
         : '',
       a.driveMedia?.fotoBuktiSerahTerimaUrl
@@ -1209,7 +1233,7 @@ export async function pushAssignmentsToSpreadsheet(
       a.vehicleId,
       a.plateNumber,
       a.vehicleType,
-      a.departureData?.jenisKendaraan || '',
+      a.departureData?.jenisKendaraan || a.deliveredData?.jenisKendaraan || '',
       a.departureData?.titikKeberangkatan || a.origin || '',
       a.routeId,
       a.destination,
@@ -1223,12 +1247,12 @@ export async function pushAssignmentsToSpreadsheet(
       a.departureData?.catatanBerangkat || '',
       depMediaStatus,
       a.handoverData?.timestamp || '',
-      a.handoverData?.kmAkhir ?? '',
-      a.handoverData?.suhuAkhir || '',
-      a.handoverData?.bbmAkhir || '',
+      a.handoverData?.kmAkhir ?? a.deliveredData?.kmSampai ?? '',
+      a.handoverData?.suhuAkhir || a.deliveredData?.suhuSampai || '',
+      a.handoverData?.bbmAkhir || a.deliveredData?.bbmSampai || '',
       a.handoverData?.penerimaNama || '',
-      a.handoverData?.kondisiAkhir || '',
-      a.handoverData?.catatanSerahTerima || '',
+      a.handoverData?.kondisiAkhir || a.deliveredData?.kondisiSampai || '',
+      a.handoverData?.catatanSerahTerima || a.deliveredData?.catatanSampai || '',
       hoMediaStatus,
       a.notes || '',
       a.createdAt,
@@ -1241,7 +1265,7 @@ export async function pushAssignmentsToSpreadsheet(
       a.driveMedia?.fotoSuhuSerahTerimaUrl || '',
       a.driveMedia?.fotoBuktiSerahTerimaUrl || '',
       a.driveMedia?.tandaTanganPenerimaUrl || '',
-      a.deliveredAt || '',
+      a.deliveredAt || a.deliveredData?.timestamp || '',
       a.volumeCbm || '',
     ];
   });
@@ -1291,3 +1315,270 @@ export async function pushConfigToSpreadsheet(
     rows
   );
 }
+
+function buildAssignmentRowForBrowserBridge(a: Assignment): Array<string | number> {
+  const depMediaStatus = [
+    a.driveMedia?.fotoOdometerBerangkatUrl
+      ? 'Odo:Drive'
+      : a.departureData?.fotoOdometerBerangkat
+      ? 'Odo:Ada'
+      : '',
+    a.driveMedia?.fotoSuhuBerangkatUrl
+      ? 'Suhu:Drive'
+      : a.departureData?.fotoSuhuBerangkat
+      ? 'Suhu:Ada'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  const hoMediaStatus = [
+    a.driveMedia?.fotoOdometerSerahTerimaUrl
+      ? 'Odo:Drive'
+      : a.handoverData?.fotoOdometerSerahTerima ||
+        a.deliveredData?.fotoOdometerSampai
+      ? 'Odo:Ada'
+      : '',
+    a.driveMedia?.fotoSuhuSerahTerimaUrl
+      ? 'Suhu:Drive'
+      : a.handoverData?.fotoSuhuSerahTerima ||
+        a.deliveredData?.fotoSuhuSampai
+      ? 'Suhu:Ada'
+      : '',
+    a.driveMedia?.fotoBuktiSerahTerimaUrl
+      ? 'Bukti:Drive'
+      : a.handoverData?.fotoBuktiSerahTerima
+      ? 'Bukti:Ada'
+      : '',
+    a.driveMedia?.tandaTanganPenerimaUrl
+      ? 'TTD:Drive'
+      : a.handoverData?.tandaTanganPenerima
+      ? 'TTD:Ada'
+      : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  return [
+    a.id,
+    a.sequenceNumber,
+    a.noPenugasan,
+    a.noSuratJalanFisik || '',
+    a.kodeSegel || '',
+    a.tanggalTugas,
+    a.driverId,
+    a.driverName,
+    a.driverPhone,
+    a.vehicleId,
+    a.plateNumber,
+    a.vehicleType,
+    a.departureData?.jenisKendaraan || a.deliveredData?.jenisKendaraan || '',
+    a.departureData?.titikKeberangkatan || a.origin || '',
+    a.routeId,
+    a.destination,
+    a.purpose,
+    a.status,
+    a.departureData?.timestamp || '',
+    a.departureData?.kmAwal ?? '',
+    a.departureData?.suhuAwal || '',
+    a.departureData?.bbmAwal || '',
+    a.departureData?.kondisiKendaraan || '',
+    a.departureData?.catatanBerangkat || '',
+    depMediaStatus,
+    a.handoverData?.timestamp || '',
+    a.handoverData?.kmAkhir ?? a.deliveredData?.kmSampai ?? '',
+    a.handoverData?.suhuAkhir || a.deliveredData?.suhuSampai || '',
+    a.handoverData?.bbmAkhir || a.deliveredData?.bbmSampai || '',
+    a.handoverData?.penerimaNama || '',
+    a.handoverData?.kondisiAkhir || a.deliveredData?.kondisiSampai || '',
+    a.handoverData?.catatanSerahTerima || a.deliveredData?.catatanSampai || '',
+    hoMediaStatus,
+    a.notes || '',
+    a.createdAt,
+    a.jadwalJamTiba || '',
+    a.beratMuatan || '',
+    a.driveMedia?.folderUrl || a.driveFolderUrl || '',
+    a.driveMedia?.fotoOdometerBerangkatUrl || '',
+    a.driveMedia?.fotoSuhuBerangkatUrl || '',
+    a.driveMedia?.fotoOdometerSerahTerimaUrl || '',
+    a.driveMedia?.fotoSuhuSerahTerimaUrl || '',
+    a.driveMedia?.fotoBuktiSerahTerimaUrl || '',
+    a.driveMedia?.tandaTanganPenerimaUrl || '',
+    a.deliveredAt || a.deliveredData?.timestamp || '',
+    a.volumeCbm || '',
+  ];
+}
+
+/**
+ * Direct CORS-safe browser fallback to Google Apps Script Web App (`GET pull_all` -> merge -> `POST push_all` with `text/plain`)
+ * used ONLY when `/api/*` is unreachable (e.g. hibernating container or mobile carrier HTML proxy).
+ * Safely pulls live sheet matrices first so existing rows in Google Sheets are never overwritten.
+ */
+export async function pushDriverMutationViaBrowserBridge(params: {
+  appsScriptUrl?: string;
+  spreadsheetId?: string;
+  updatedAssignment?: Assignment;
+  updatedVehicleStatus?: { vehicleId?: string; plateNumber?: string; status: VehicleMaster['status'] };
+  createdExpense?: DriverExpense;
+}): Promise<boolean> {
+  const bridgeUrl = String(params.appsScriptUrl || '').trim();
+  const sheetId = extractSpreadsheetId(params.spreadsheetId || '');
+  if (!bridgeUrl || !sheetId || !/^https:\/\/script\.google\.com\//i.test(bridgeUrl)) {
+    return false;
+  }
+
+  const fetchBridgeBounded = async (
+    url: string,
+    init: RequestInit,
+    timeoutMs = 5000
+  ): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  try {
+    const sep = bridgeUrl.includes('?') ? '&' : '?';
+    const pullRes = await fetchBridgeBounded(
+      `${bridgeUrl}${sep}action=pull_all&spreadsheetId=${encodeURIComponent(sheetId)}&_t=${Date.now()}`,
+      {
+        method: 'GET',
+        redirect: 'follow',
+      },
+      5000
+    );
+    if (!pullRes.ok) return false;
+    const pullText = await pullRes.text();
+    if (pullText.trim().startsWith('<')) return false;
+    const pulled = JSON.parse(pullText) as {
+      ok?: boolean;
+      Master_Driver?: string[][];
+      Master_Armada?: string[][];
+      Master_Rute?: string[][];
+      Master_Fleet_Card?: string[][];
+      Surat_Tugas?: string[][];
+      Pengeluaran_Driver?: string[][];
+      Konfigurasi?: string[][];
+    };
+    if (!pulled?.ok || !Array.isArray(pulled.Surat_Tugas)) {
+      return false;
+    }
+
+    const driversRows = (pulled.Master_Driver || []).slice(1);
+    const vehiclesRows = (pulled.Master_Armada || []).slice(1).map((r) => [...r]);
+    const routesRows = (pulled.Master_Rute || []).slice(1);
+    const fleetCardsRows = (pulled.Master_Fleet_Card || []).slice(1).map((r) => [...r]);
+    const assignmentsRows = (pulled.Surat_Tugas || []).slice(1).map((r) => [...r]);
+    const expensesRows = (pulled.Pengeluaran_Driver || []).slice(1).map((r) => [...r]);
+    const configRows = (pulled.Konfigurasi || []).slice(1);
+
+    if (params.updatedAssignment) {
+      const target = params.updatedAssignment;
+      const newRow = buildAssignmentRowForBrowserBridge(target).map((v) => String(v ?? ''));
+      const idx = assignmentsRows.findIndex(
+        (r) =>
+          String(r[0] || '').trim() === target.id ||
+          String(r[2] || '').trim().toLowerCase() === target.noPenugasan.trim().toLowerCase()
+      );
+      if (idx >= 0) {
+        // Preserve existing Drive links in columns 37..43 if target doesn't have them
+        for (let col = 37; col <= 43; col++) {
+          if (!newRow[col] && assignmentsRows[idx][col]) {
+            newRow[col] = assignmentsRows[idx][col];
+          }
+        }
+        assignmentsRows[idx] = newRow;
+      } else {
+        assignmentsRows.push(newRow);
+      }
+    }
+
+    if (params.updatedVehicleStatus) {
+      const { vehicleId, plateNumber, status } = params.updatedVehicleStatus;
+      const vIdx = vehiclesRows.findIndex(
+        (r) =>
+          (vehicleId && String(r[0] || '').trim().toLowerCase() === vehicleId.trim().toLowerCase()) ||
+          (plateNumber && String(r[1] || '').trim().toLowerCase() === plateNumber.trim().toLowerCase())
+      );
+      if (vIdx >= 0) {
+        while (vehiclesRows[vIdx].length < 5) vehiclesRows[vIdx].push('');
+        vehiclesRows[vIdx][4] = status;
+      }
+    }
+
+    if (params.createdExpense) {
+      const exp = params.createdExpense;
+      const alreadyInSheet = expensesRows.some(
+        (r) => String(r[0] || '').trim().toLowerCase() === exp.id.trim().toLowerCase()
+      );
+      if (!alreadyInSheet) {
+        const fcIdx = fleetCardsRows.findIndex(
+          (r) =>
+            (exp.fleetCardId &&
+              String(r[0] || '').trim().toLowerCase() === exp.fleetCardId.trim().toLowerCase()) ||
+            (exp.fleetCardNumber &&
+              String(r[1] || '').replace(/\s+/g, '').toLowerCase() ===
+                exp.fleetCardNumber.replace(/\s+/g, '').toLowerCase())
+        );
+        if (fcIdx >= 0) {
+          const curBal = parseIdrNumericCell(fleetCardsRows[fcIdx][2]);
+          fleetCardsRows[fcIdx][2] = String(
+            Math.round(curBal - (Number(exp.totalPengeluaran) || 0))
+          );
+        }
+        expensesRows.push([
+          exp.id,
+          exp.timestamp,
+          exp.tanggal,
+          exp.driverId,
+          exp.driverName,
+          exp.plateNumber || '',
+          exp.completedAssignmentNos || '',
+          exp.fleetCardId || '',
+          exp.fleetCardNumber,
+          String(Math.round(Number(exp.totalPengirimanBbm) || 0)),
+          exp.fotoStrukBbmUrl || (exp.fotoStrukBbm ? 'Foto Struk BBM Tersimpan' : ''),
+          String(Math.round(Number(exp.totalPengeluaranTol) || 0)),
+          exp.fotoStrukTolUrl || (exp.fotoStrukTol ? 'Foto Struk Tol Tersimpan' : ''),
+          String(Math.round(Number(exp.totalPengeluaran) || 0)),
+          exp.catatan || '',
+          exp.tanggalPengiriman || exp.tanggal || '',
+          exp.tujuanPengiriman || '',
+        ]);
+      }
+    }
+
+    const pushRes = await fetchBridgeBounded(
+      bridgeUrl,
+      {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'push_all',
+          spreadsheetId: sheetId,
+          driversRows,
+          vehiclesRows,
+          routesRows,
+          fleetCardsRows,
+          assignmentsRows,
+          driverExpensesRows: expensesRows,
+          configRows,
+        }),
+      },
+      5500
+    );
+    if (!pushRes.ok) return false;
+    const pushText = await pushRes.text();
+    if (pushText.trim().startsWith('<')) return false;
+    const pushJson = JSON.parse(pushText) as { ok?: boolean; success?: boolean };
+    return Boolean(pushJson?.ok || pushJson?.success);
+  } catch {
+    return false;
+  }
+}
+

@@ -131,15 +131,18 @@ type AdminMenuTab =
 
 type MasterSubTab = 'drivers' | 'vehicles' | 'routes';
 
-const PERMANENT_APPS_SCRIPT_CODE = `/**
+function buildPermanentAppsScriptCode(defaultSpreadsheetId?: string): string {
+  const safeSheetId = String(defaultSpreadsheetId || '').trim();
+  return `/**
  * CRK LOGISTIK DELIVERY SISTEM — Bridge Sinkronisasi Dua Arah Permanen 24/7
- * Cara Pasang (Sekali Saja):
- * 1. Buka Google Spreadsheet Anda -> Ekstensi (Extensions) -> Apps Script
- * 2. Hapus isi Code.gs lalu tempelkan seluruh kode ini dan tekan Simpan (Ctrl+S)
- * 3. Klik Deploy -> New deployment -> Pilih type: Web app
- * 4. Set "Execute as": Me, dan "Who has access": Anyone -> Klik Deploy
- * 5. Salin Web app URL (.../exec) ke menu Database Spreadsheets di Aplikasi CRK Logistik
+ * Cara Pasang / Update:
+ * 1. Buka project Google Apps Script Anda -> pilih file Kode.gs (atau Code.gs)
+ * 2. Hapus seluruh isi Kode.gs lama, tempelkan seluruh kode ini, lalu tekan Simpan (Ctrl+S)
+ * 3. Klik Terapkan (Deploy) -> Kelola deployment -> klik ikon Pensil (Edit)
+ * 4. Pada kolom Versi (Version), pilih "Versi baru" (New version), pastikan Akses: "Siapa saja" -> klik Terapkan
  */
+
+var SPREADSHEET_ID = '${safeSheetId}';
 
 var TAB_HEADERS = {
   Master_Driver: ['ID Driver', 'Nama Driver', 'No. WhatsApp', 'PIN Login Driver', 'Jenis SIM', 'Status Aktif'],
@@ -170,11 +173,15 @@ var TAB_HEADERS = {
 };
 
 function openTargetSpreadsheet_(spreadsheetId) {
-  if (spreadsheetId && String(spreadsheetId).trim()) {
-    return SpreadsheetApp.openById(String(spreadsheetId).trim());
+  var targetId = String(spreadsheetId || SPREADSHEET_ID || '').trim();
+  if (targetId) {
+    return SpreadsheetApp.openById(targetId);
   }
   return SpreadsheetApp.getActiveSpreadsheet();
+}`;
 }
+
+const PERMANENT_APPS_SCRIPT_BODY = `
 
 function ensureSheetWithHeaders_(ss, tabName) {
   var headers = TAB_HEADERS[tabName];
@@ -4953,7 +4960,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           type="button"
                           onClick={() =>
                             onCopyText(
-                              PERMANENT_APPS_SCRIPT_CODE,
+                              `${buildPermanentAppsScriptCode(
+                                config.spreadsheetId
+                              )}\n\n${PERMANENT_APPS_SCRIPT_BODY}`,
                               'Kode Google Apps Script Permanen'
                             )
                           }
@@ -5043,13 +5052,65 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         </div>
                       </div>
 
-                      {config.appsScriptUrl && (
-                        <p className="mt-2 font-mono text-xs text-emerald-700 tabular-nums">
-                          Aktif Permanen 24/7 · Server menyelaraskan perubahan
-                          &amp; penghapusan baris Spreadsheet secara otomatis
-                          setiap 15 detik tanpa perlu sinkron ulang.
-                        </p>
-                      )}
+                      {config.appsScriptUrl &&
+                        (config.appsScriptBridgeStatus ===
+                        'AUTH_BLOCKED_HTML' ? (
+                          <p className="mt-2 text-xs text-amber-700 leading-relaxed">
+                            Perhatian Izin Deployment Apps Script: URL saat ini
+                            masih meminta halaman Login Google (HTML). Agar
+                            sinkronisasi latar belakang saat tab ditutup aktif
+                            penuh, buka Google Apps Script &rarr;{' '}
+                            <span className="font-semibold">
+                              Terapkan &rarr; Kelola deployment &rarr; Edit
+                            </span>{' '}
+                            lalu ubah{' '}
+                            <span className="font-semibold">
+                              Yang memiliki akses
+                            </span>{' '}
+                            menjadi{' '}
+                            <span className="font-semibold">
+                              Siapa saja (Anyone)
+                            </span>
+                            .
+                          </p>
+                        ) : config.appsScriptBridgeStatus ===
+                          'NEEDS_SCRIPT_UPDATE' ? (
+                          <p className="mt-2 text-xs text-amber-700 leading-relaxed">
+                            Izin akses{' '}
+                            <span className="font-semibold">Siapa saja</span>{' '}
+                            sudah aktif, namun{' '}
+                            <span className="font-mono font-semibold">
+                              Kode.gs
+                            </span>{' '}
+                            di Apps Script Anda masih menggunakan versi lama (
+                            <span className="font-mono">
+                              Action tidak dikenal
+                            </span>
+                            ). Klik tombol{' '}
+                            <span className="font-semibold">
+                              Salin Kode Apps Script
+                            </span>{' '}
+                            di atas, ganti seluruh isi{' '}
+                            <span className="font-mono font-semibold">
+                              Kode.gs
+                            </span>{' '}
+                            lalu tekan Simpan, kemudian klik{' '}
+                            <span className="font-semibold">
+                              Terapkan &rarr; Kelola deployment &rarr; ikon
+                              Pensil (Edit) &rarr; Versi: Versi baru &rarr;
+                              Terapkan
+                            </span>{' '}
+                            (URL tetap sama). Selama akun Google terhubung di
+                            tab Admin, sinkronisasi ke Spreadsheet tetap
+                            berjalan otomatis.
+                          </p>
+                        ) : (
+                          <p className="mt-2 font-mono text-xs text-emerald-700 tabular-nums">
+                            Aktif Permanen 24/7 · Server menyelaraskan perubahan
+                            &amp; penghapusan baris Spreadsheet secara otomatis
+                            setiap 15 detik tanpa perlu sinkron ulang.
+                          </p>
+                        ))}
                     </div>
                   </div>
                 )}

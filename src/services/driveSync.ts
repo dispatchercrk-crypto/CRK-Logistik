@@ -87,6 +87,7 @@ export function countAssignmentPhotos(
   asg: Assignment
 ): AssignmentPhotoCountSummary {
   const dep = asg.departureData;
+  const deliv = asg.deliveredData;
   const ho = asg.handoverData;
   const dm = asg.driveMedia;
 
@@ -103,12 +104,12 @@ export function countAssignmentPhotos(
         stage: 'dep',
       },
       {
-        raw: ho?.fotoOdometerSerahTerima,
+        raw: ho?.fotoOdometerSerahTerima || deliv?.fotoOdometerSampai,
         driveUrl: dm?.fotoOdometerSerahTerimaUrl,
         stage: 'ho',
       },
       {
-        raw: ho?.fotoSuhuSerahTerima,
+        raw: ho?.fotoSuhuSerahTerima || deliv?.fotoSuhuSampai,
         driveUrl: dm?.fotoSuhuSerahTerimaUrl,
         stage: 'ho',
       },
@@ -424,6 +425,7 @@ export async function syncAllAssignmentsPhotosToDrive(
 
   for (const asg of assignments) {
     const dep = asg.departureData;
+    const deliv = asg.deliveredData;
     const ho = asg.handoverData;
     const existingDm = asg.driveMedia || {};
     const overwrite = Boolean(options?.overwriteExisting);
@@ -448,14 +450,14 @@ export async function syncAllAssignmentsPhotosToDrive(
       },
       {
         key: 'fotoOdometerSerahTerimaUrl',
-        filePrefix: `${asg.noPenugasan || asg.id}_03_Odometer_SerahTerima`,
-        raw: ho?.fotoOdometerSerahTerima,
+        filePrefix: `${asg.noPenugasan || asg.id}_03_Odometer_Sampai`,
+        raw: ho?.fotoOdometerSerahTerima || deliv?.fotoOdometerSampai,
         existingUrl: existingDm.fotoOdometerSerahTerimaUrl,
       },
       {
         key: 'fotoSuhuSerahTerimaUrl',
-        filePrefix: `${asg.noPenugasan || asg.id}_04_Suhu_SerahTerima`,
-        raw: ho?.fotoSuhuSerahTerima,
+        filePrefix: `${asg.noPenugasan || asg.id}_04_Suhu_Sampai`,
+        raw: ho?.fotoSuhuSerahTerima || deliv?.fotoSuhuSampai,
         existingUrl: existingDm.fotoSuhuSerahTerimaUrl,
       },
       {

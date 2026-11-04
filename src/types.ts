@@ -119,6 +119,18 @@ export interface DepartureReport {
   fotoSuhuBerangkat?: string;
 }
 
+export interface DeliveredReport {
+  timestamp: string;
+  jenisKendaraan?: VehicleCoolingType;
+  kmSampai: number;
+  suhuSampai: string;
+  bbmSampai: string;
+  kondisiSampai: string;
+  catatanSampai?: string;
+  fotoOdometerSampai?: string;
+  fotoSuhuSampai?: string;
+}
+
 export interface HandoverReport {
   timestamp: string;
   kmAkhir: number;
@@ -171,6 +183,7 @@ export interface Assignment {
   volumeCbm?: string;
   status: TaskStatus;
   departureData?: DepartureReport;
+  deliveredData?: DeliveredReport;
   handoverData?: HandoverReport;
   driveFolderUrl?: string;
   driveMedia?: DriveMediaLinks;
@@ -210,6 +223,12 @@ export interface AppConfig {
   spreadsheetTitle: string;
   spreadsheetUrl: string;
   appsScriptUrl?: string;
+  appsScriptBridgeStatus?:
+    | 'ACTIVE'
+    | 'NEEDS_SCRIPT_UPDATE'
+    | 'AUTH_BLOCKED_HTML'
+    | 'ERROR'
+    | 'NONE';
   serverSheetSyncMode?: 'APPS_SCRIPT_24_7' | 'LIVE_CSV_AND_OAUTH' | 'OAUTH_AUTO';
   driveRootFolderId?: string;
   driveRootFolderUrl?: string;

@@ -108,7 +108,7 @@ export const PrintableAssignmentModal: React.FC<
 > = ({ assignment, onClose }) => {
   const [vaultMedia, setVaultMedia] = useState<Pick<
     Assignment,
-    'departureData' | 'handoverData'
+    'departureData' | 'deliveredData' | 'handoverData'
   > | null>(null);
 
   useEffect(() => {
@@ -133,19 +133,24 @@ export const PrintableAssignmentModal: React.FC<
 
   const durationMins = calculateTripDurationMinutes(
     assignment.departureData?.timestamp,
-    assignment.handoverData?.timestamp
+    assignment.handoverData?.timestamp ||
+      assignment.deliveredData?.timestamp ||
+      assignment.deliveredAt
   );
   const otdEval = evaluateAssignmentOtd(assignment);
 
   const startKm = assignment.departureData?.kmAwal;
-  const endKm = assignment.handoverData?.kmAkhir;
+  const endKm =
+    assignment.deliveredData?.kmSampai ?? assignment.handoverData?.kmAkhir;
   const distanceTraveled =
     startKm !== undefined && endKm !== undefined && endKm >= startKm
       ? endKm - startKm
       : null;
 
   const jenisKendaraan =
-    assignment.departureData?.jenisKendaraan || 'Mobil Pendingin';
+    assignment.deliveredData?.jenisKendaraan ||
+    assignment.departureData?.jenisKendaraan ||
+    'Mobil Pendingin';
   const isPendingin = jenisKendaraan !== 'Non Pendingin';
   const titikKeberangkatan =
     assignment.departureData?.titikKeberangkatan ||
@@ -429,55 +434,98 @@ export const PrintableAssignmentModal: React.FC<
 
           <div className="rounded-lg border border-slate-200 p-4 text-xs">
             <h2 className="text-sm font-bold text-slate-900">
-              02. Data Serah Terima Tugas
+              02. Data Delivered (Sampai) &amp; Berita Acara Serah Terima
             </h2>
-            {assignment.handoverData ? (
+            {assignment.deliveredData || assignment.handoverData ? (
               <dl className="mt-3 space-y-1.5">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Timestamp Real-Time:</dt>
-                  <dd className="font-mono font-semibold text-slate-900 tabular-nums">
-                    {formatRealTimeTimestamp(assignment.handoverData.timestamp)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Odometer KM Akhir:</dt>
-                  <dd className="font-mono font-semibold text-slate-900 tabular-nums">
-                    {assignment.handoverData.kmAkhir.toLocaleString('id-ID')} km
-                    {distanceTraveled !== null
-                      ? ` (${distanceTraveled.toLocaleString('id-ID')} km)`
-                      : ''}
-                  </dd>
-                </div>
-                {isPendingin && (
+                {(assignment.deliveredData?.timestamp || assignment.deliveredAt) && (
                   <div className="flex justify-between gap-2">
-                    <dt className="text-slate-500">Suhu Monitor Serah Terima:</dt>
-                    <dd className="font-mono font-semibold text-sky-800 tabular-nums">
-                      {assignment.handoverData.suhuAkhir || '-'}
+                    <dt className="text-slate-500">Waktu Sampai (Delivered):</dt>
+                    <dd className="font-mono font-semibold text-slate-900 tabular-nums">
+                      {formatRealTimeTimestamp(
+                        assignment.deliveredData?.timestamp ||
+                          assignment.deliveredAt ||
+                          ''
+                      )}
                     </dd>
                   </div>
                 )}
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Nama Penerima:</dt>
-                  <dd className="font-semibold text-slate-900">
-                    {assignment.handoverData.penerimaNama}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Kondisi Serah Terima:</dt>
-                  <dd className="text-slate-900 text-right">
-                    {assignment.handoverData.kondisiAkhir}
-                  </dd>
-                </div>
+                {endKm !== undefined && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Odometer KM Sampai:</dt>
+                    <dd className="font-mono font-semibold text-slate-900 tabular-nums">
+                      {endKm.toLocaleString('id-ID')} km
+                      {distanceTraveled !== null
+                        ? ` (${distanceTraveled.toLocaleString('id-ID')} km)`
+                        : ''}
+                    </dd>
+                  </div>
+                )}
+                {isPendingin && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Suhu Serah Sampai:</dt>
+                    <dd className="font-mono font-semibold text-sky-800 tabular-nums">
+                      {assignment.deliveredData?.suhuSampai ||
+                        assignment.handoverData?.suhuAkhir ||
+                        '-'}
+                    </dd>
+                  </div>
+                )}
+                {(assignment.deliveredData?.bbmSampai ||
+                  assignment.handoverData?.bbmAkhir) && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Posisi BBM Sampai:</dt>
+                    <dd className="text-slate-900">
+                      {assignment.deliveredData?.bbmSampai ||
+                        assignment.handoverData?.bbmAkhir}
+                    </dd>
+                  </div>
+                )}
+                {(assignment.deliveredData?.kondisiSampai ||
+                  assignment.handoverData?.kondisiAkhir) && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">
+                      Kondisi Muatan &amp; Segel Sampai:
+                    </dt>
+                    <dd className="text-slate-900 text-right">
+                      {assignment.deliveredData?.kondisiSampai ||
+                        assignment.handoverData?.kondisiAkhir}
+                    </dd>
+                  </div>
+                )}
+                {assignment.handoverData && (
+                  <>
+                    <div className="pt-1.5 border-t border-slate-100 flex justify-between gap-2">
+                      <dt className="text-slate-500">Waktu Serah Terima:</dt>
+                      <dd className="font-mono font-semibold text-slate-900 tabular-nums">
+                        {formatRealTimeTimestamp(
+                          assignment.handoverData.timestamp
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-slate-500">
+                        Nama Penerima Serah Terima:
+                      </dt>
+                      <dd className="font-semibold text-slate-900">
+                        {assignment.handoverData.penerimaNama || '-'}
+                      </dd>
+                    </div>
+                  </>
+                )}
                 <div className="pt-1 border-t border-slate-100">
                   <dt className="text-slate-500">Catatan Serah Terima:</dt>
                   <dd className="mt-0.5 text-slate-800">
-                    {assignment.handoverData.catatanSerahTerima || '-'}
+                    {assignment.handoverData?.catatanSerahTerima ||
+                      assignment.deliveredData?.catatanSampai ||
+                      '-'}
                   </dd>
                 </div>
               </dl>
             ) : (
               <p className="mt-3 text-slate-500">
-                Belum ada laporan serah terima tercatat.
+                Belum ada laporan Delivered (Sampai) maupun Berita Acara Serah
+                Terima tercatat.
               </p>
             )}
           </div>

@@ -67,6 +67,7 @@ import {
 } from '../services/persistentVault';
 import { persistSavedDriverUid } from '../services/googleAuth';
 import {
+  DriverDeliveredSubmitPayload,
   DriverDepartureSubmitPayload,
   DriverHandoverSubmitPayload,
   DriverReportStage,
@@ -171,7 +172,7 @@ interface DriverPortalProps {
   ) => Promise<WhatsAppNotificationLog | null>;
   onSubmitDelivered: (
     assignmentId: string,
-    catatanTiba: string,
+    payload: DriverDeliveredSubmitPayload | string,
     waTargetMode: WhatsAppTargetMode,
     autoOpenWa: boolean,
     explicitSnapshot?: Assignment,
@@ -325,11 +326,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
   }, [activeTab]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const initialTaskOpenedRef = useRef<boolean>(false);
-  const [submittingDeliveredId, setSubmittingDeliveredId] = useState<
-    string | null
-  >(null);
+  const waBannerRef = useRef<HTMLDivElement | null>(null);
 
-  // Real-time ticking clock for Departure, Handover & WhatsApp Timestamp display
+  // Real-time ticking clock for Departure, Delivered, Handover & WhatsApp Timestamp display
   const [liveNow, setLiveNow] = useState<Date>(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setLiveNow(new Date()), 1000);
@@ -365,7 +364,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
   }, [config.whatsappTargetMode, driver.phone, waTargetMode]);
 
-  // Departure Form States
+  // Stage 1: Departure Form States
   const [titikKeberangkatan, setTitikKeberangkatan] = useState<string>('');
   const [jenisKendaraan, setJenisKendaraan] =
     useState<VehicleCoolingType>('Mobil Pendingin');
@@ -380,20 +379,22 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     useState<string>('');
   const [fotoSuhuBerangkat, setFotoSuhuBerangkat] = useState<string>('');
 
-  // Handover Form States (adapts to Departure's Mobil Pendingin / Non Pendingin)
-  const [handoverJenisKendaraan, setHandoverJenisKendaraan] =
+  // Stage 2: Delivered (Sampai) Form States (adapts to Departure's Mobil Pendingin / Non Pendingin)
+  const [deliveredJenisKendaraan, setDeliveredJenisKendaraan] =
     useState<VehicleCoolingType>('Mobil Pendingin');
-  const [kmAkhir, setKmAkhir] = useState<string>('');
-  const [suhuAkhir, setSuhuAkhir] = useState<string>('');
-  const [bbmAkhir, setBbmAkhir] = useState<string>('1/2 Tangki');
-  const [penerimaNama, setPenerimaNama] = useState<string>('');
-  const [kondisiAkhir, setKondisiAkhir] = useState<string>(
+  const [kmSampai, setKmSampai] = useState<string>('');
+  const [suhuSampai, setSuhuSampai] = useState<string>('');
+  const [bbmSampai, setBbmSampai] = useState<string>('1/2 Tangki');
+  const [kondisiSampai, setKondisiSampai] = useState<string>(
     'Suhu & Segel Utuh - Lengkap'
   );
+  const [catatanSampai, setCatatanSampai] = useState<string>('');
+  const [fotoOdometerSampai, setFotoOdometerSampai] = useState<string>('');
+  const [fotoSuhuSampai, setFotoSuhuSampai] = useState<string>('');
+
+  // Stage 3: Selesai Handover (Berita Acara Serah Terima) Form States
+  const [penerimaNama, setPenerimaNama] = useState<string>('');
   const [catatanSerahTerima, setCatatanSerahTerima] = useState<string>('');
-  const [fotoOdometerSerahTerima, setFotoOdometerSerahTerima] =
-    useState<string>('');
-  const [fotoSuhuSerahTerima, setFotoSuhuSerahTerima] = useState<string>('');
   const [fotoBuktiSerahTerima, setFotoBuktiSerahTerima] = useState<string>('');
   const [tandaTanganPenerima, setTandaTanganPenerima] = useState<string>('');
 
@@ -752,15 +753,15 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
   };
 
-  const handleSelectHandoverJenisFallback = (next: VehicleCoolingType) => {
-    setHandoverJenisKendaraan(next);
+  const handleSelectDeliveredJenisFallback = (next: VehicleCoolingType) => {
+    setDeliveredJenisKendaraan(next);
     setFormValidationErr('');
     if (next === 'Non Pendingin') {
-      setSuhuAkhir('');
-      setFotoSuhuSerahTerima('');
-      setKondisiAkhir('Segel & Muatan Utuh - Lengkap');
+      setSuhuSampai('');
+      setFotoSuhuSampai('');
+      setKondisiSampai('Segel & Muatan Utuh - Lengkap');
     } else {
-      setKondisiAkhir('Suhu & Segel Utuh - Lengkap');
+      setKondisiSampai('Suhu & Segel Utuh - Lengkap');
     }
   };
 
@@ -794,28 +795,27 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       setCatatanBerangkat('');
       setFotoOdometerBerangkat('');
       setFotoSuhuBerangkat('');
-    } else if (
-      task.status === TaskStatus.DALAM_PERJALANAN ||
-      task.status === TaskStatus.DELIVERED
-    ) {
-      const matchedRoute = routes.find((r) => r.id === task.routeId);
+    } else if (task.status === TaskStatus.DALAM_PERJALANAN) {
       const depJenis: VehicleCoolingType =
         task.departureData?.jenisKendaraan === 'Non Pendingin'
           ? 'Non Pendingin'
           : 'Mobil Pendingin';
-      setHandoverJenisKendaraan(depJenis);
-      setKmAkhir('');
-      setSuhuAkhir('');
-      setBbmAkhir('1/2 Tangki');
-      setPenerimaNama(matchedRoute?.picName || '');
-      setKondisiAkhir(
+      setDeliveredJenisKendaraan(depJenis);
+      setKmSampai('');
+      setSuhuSampai('');
+      setBbmSampai('1/2 Tangki');
+      setKondisiSampai(
         depJenis === 'Non Pendingin'
           ? 'Segel & Muatan Utuh - Lengkap'
           : 'Suhu & Segel Utuh - Lengkap'
       );
+      setCatatanSampai('');
+      setFotoOdometerSampai('');
+      setFotoSuhuSampai('');
+    } else if (task.status === TaskStatus.DELIVERED) {
+      const matchedRoute = routes.find((r) => r.id === task.routeId);
+      setPenerimaNama(matchedRoute?.picName || '');
       setCatatanSerahTerima('');
-      setFotoOdometerSerahTerima('');
-      setFotoSuhuSerahTerima('');
       setFotoBuktiSerahTerima('');
       setTandaTanganPenerima('');
     }
@@ -841,22 +841,34 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             setFotoOdometerBerangkat(draft.fotoOdometerBerangkat);
           if (draft.fotoSuhuBerangkat)
             setFotoSuhuBerangkat(draft.fotoSuhuBerangkat);
-        } else {
-          if (draft.handoverJenisKendaraan)
-            setHandoverJenisKendaraan(draft.handoverJenisKendaraan);
-          if (draft.kmAkhir !== undefined && draft.kmAkhir !== '')
-            setKmAkhir(draft.kmAkhir);
-          if (draft.suhuAkhir !== undefined && draft.suhuAkhir !== '')
-            setSuhuAkhir(draft.suhuAkhir);
-          if (draft.bbmAkhir) setBbmAkhir(draft.bbmAkhir);
+        } else if (task.status === TaskStatus.DALAM_PERJALANAN) {
+          const savedJenis =
+            draft.deliveredJenisKendaraan || draft.handoverJenisKendaraan;
+          if (savedJenis) setDeliveredJenisKendaraan(savedJenis);
+          const savedKm = draft.kmSampai ?? draft.kmAkhir;
+          if (savedKm !== undefined && savedKm !== '') setKmSampai(savedKm);
+          const savedSuhu = draft.suhuSampai ?? draft.suhuAkhir;
+          if (savedSuhu !== undefined && savedSuhu !== '')
+            setSuhuSampai(savedSuhu);
+          if (draft.bbmSampai || draft.bbmAkhir)
+            setBbmSampai(draft.bbmSampai || draft.bbmAkhir || '1/2 Tangki');
+          if (draft.kondisiSampai || draft.kondisiAkhir)
+            setKondisiSampai(
+              draft.kondisiSampai ||
+                draft.kondisiAkhir ||
+                'Suhu & Segel Utuh - Lengkap'
+            );
+          if (draft.catatanSampai) setCatatanSampai(draft.catatanSampai);
+          const savedOdo =
+            draft.fotoOdometerSampai || draft.fotoOdometerSerahTerima;
+          if (savedOdo) setFotoOdometerSampai(savedOdo);
+          const savedSuhuFoto =
+            draft.fotoSuhuSampai || draft.fotoSuhuSerahTerima;
+          if (savedSuhuFoto) setFotoSuhuSampai(savedSuhuFoto);
+        } else if (task.status === TaskStatus.DELIVERED) {
           if (draft.penerimaNama) setPenerimaNama(draft.penerimaNama);
-          if (draft.kondisiAkhir) setKondisiAkhir(draft.kondisiAkhir);
           if (draft.catatanSerahTerima)
             setCatatanSerahTerima(draft.catatanSerahTerima);
-          if (draft.fotoOdometerSerahTerima)
-            setFotoOdometerSerahTerima(draft.fotoOdometerSerahTerima);
-          if (draft.fotoSuhuSerahTerima)
-            setFotoSuhuSerahTerima(draft.fotoSuhuSerahTerima);
           if (draft.fotoBuktiSerahTerima)
             setFotoBuktiSerahTerima(draft.fotoBuktiSerahTerima);
           if (draft.tandaTanganPenerima)
@@ -907,15 +919,16 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       catatanBerangkat,
       fotoOdometerBerangkat: fotoOdometerBerangkat || undefined,
       fotoSuhuBerangkat: fotoSuhuBerangkat || undefined,
-      handoverJenisKendaraan,
-      kmAkhir,
-      suhuAkhir,
-      bbmAkhir,
+      deliveredJenisKendaraan,
+      kmSampai,
+      suhuSampai,
+      bbmSampai,
+      kondisiSampai,
+      catatanSampai,
+      fotoOdometerSampai: fotoOdometerSampai || undefined,
+      fotoSuhuSampai: fotoSuhuSampai || undefined,
       penerimaNama,
-      kondisiAkhir,
       catatanSerahTerima,
-      fotoOdometerSerahTerima: fotoOdometerSerahTerima || undefined,
-      fotoSuhuSerahTerima: fotoSuhuSerahTerima || undefined,
       fotoBuktiSerahTerima: fotoBuktiSerahTerima || undefined,
       tandaTanganPenerima: tandaTanganPenerima || undefined,
     });
@@ -930,15 +943,16 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     catatanBerangkat,
     fotoOdometerBerangkat,
     fotoSuhuBerangkat,
-    handoverJenisKendaraan,
-    kmAkhir,
-    suhuAkhir,
-    bbmAkhir,
+    deliveredJenisKendaraan,
+    kmSampai,
+    suhuSampai,
+    bbmSampai,
+    kondisiSampai,
+    catatanSampai,
+    fotoOdometerSampai,
+    fotoSuhuSampai,
     penerimaNama,
-    kondisiAkhir,
     catatanSerahTerima,
-    fotoOdometerSerahTerima,
-    fotoSuhuSerahTerima,
     fotoBuktiSerahTerima,
     tandaTanganPenerima,
   ]);
@@ -1118,6 +1132,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       candidateAssignment: Assignment;
       departurePayload?: DriverDepartureSubmitPayload;
       deliveredCatatan?: string;
+      deliveredPayload?: DriverDeliveredSubmitPayload;
       handoverPayload?: DriverHandoverSubmitPayload;
       suppressToast?: boolean;
     }): Promise<{
@@ -1131,6 +1146,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         candidateAssignment,
         departurePayload,
         deliveredCatatan,
+        deliveredPayload,
         handoverPayload,
         suppressToast = false,
       } = params;
@@ -1142,6 +1158,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         candidateAssignment,
         departurePayload,
         deliveredCatatan,
+        deliveredPayload,
         handoverPayload,
       });
 
@@ -1219,6 +1236,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           candidateAssignment: hydrated.assignmentSnapshot,
           departurePayload: hydrated.departurePayload,
           deliveredCatatan: hydrated.deliveredCatatan,
+          deliveredPayload: hydrated.deliveredPayload,
           handoverPayload: hydrated.handoverPayload,
           suppressToast: true,
         });
@@ -1290,48 +1308,15 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
   }, [driver.id, onNotify, onRetryPendingSync, retrySinglePendingItem]);
 
-  const handleQuickDelivered = async (task: Assignment) => {
-    if (submittingDeliveredId || submitting) return;
-    setSubmittingDeliveredId(task.id);
-    const catatanTiba = 'Armada telah tiba di lokasi tujuan';
-    const nowIso = new Date().toISOString();
-
-    try {
-      const candidateDeliveredTask: Assignment = {
-        ...task,
-        status: TaskStatus.DELIVERED,
-        deliveredAt: nowIso,
-        notes: task.notes
-          ? `${task.notes} | Tiba: ${catatanTiba}`
-          : `Tiba: ${catatanTiba}`,
-      };
-
-      const fsResult = await submitReportToFirestoreWithOfflineRecovery({
-        assignmentId: task.id,
-        stage: 'DELIVERED',
-        candidateAssignment: candidateDeliveredTask,
-        deliveredCatatan: catatanTiba,
+  const scrollWaBannerIntoView = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.setTimeout(() => {
+      waBannerRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
       });
-
-      const waLog = await onSubmitDelivered(
-        task.id,
-        catatanTiba,
-        waTargetMode,
-        autoOpenWa,
-        fsResult.resolvedAssignment,
-        {
-          firestoreAlreadySynced: fsResult.syncedToFirestore,
-          firestoreQueuedInPortal: fsResult.queuedOffline,
-          resolvedAssignment: fsResult.resolvedAssignment,
-        }
-      );
-      if (waLog) {
-        setLastSentWaLog(waLog);
-      }
-    } finally {
-      setSubmittingDeliveredId(null);
-    }
-  };
+    }, 80);
+  }, []);
 
   const handleDirectDepartureSubmit = async (
     e: React.FormEvent,
@@ -1387,6 +1372,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
       const candidateDepartureTask: Assignment = {
         ...task,
+        driverCode: task.driverCode || driver.id || task.driverId,
         origin: departurePayload.titikKeberangkatan,
         status: TaskStatus.DALAM_PERJALANAN,
         departureData: {
@@ -1403,11 +1389,14 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         },
       };
 
-      const fsResult = await submitReportToFirestoreWithOfflineRecovery({
-        assignmentId: task.id,
-        stage: 'KEBERANGKATAN',
-        candidateAssignment: candidateDepartureTask,
-        departurePayload,
+      void cacheSuratTugasSnapshotLocally(candidateDepartureTask, driver.id);
+      setCachedDriverTasks((prev) => {
+        const exists = prev.some((item) => item.id === candidateDepartureTask.id);
+        return exists
+          ? prev.map((item) =>
+              item.id === candidateDepartureTask.id ? candidateDepartureTask : item
+            )
+          : [candidateDepartureTask, ...prev];
       });
 
       const waLog = await onSubmitDeparture(
@@ -1415,14 +1404,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         departurePayload,
         waTargetMode,
         autoOpenWa,
-        fsResult.resolvedAssignment,
-        {
-          firestoreAlreadySynced: fsResult.syncedToFirestore,
-          firestoreQueuedInPortal: fsResult.queuedOffline,
-          resolvedAssignment: fsResult.resolvedAssignment,
-        }
+        candidateDepartureTask
       );
-      if (waLog || fsResult.syncedToFirestore || fsResult.queuedOffline) {
+      if (waLog) {
         void clearDriverFormDraft(task.id);
         if (typeof window !== 'undefined') {
           try {
@@ -1431,10 +1415,138 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             // Ignore
           }
         }
-        if (waLog) {
-          setLastSentWaLog(waLog);
+        setLastSentWaLog(waLog);
+        if (waLog.gatewayDetail?.includes('Pending Sync Queue')) {
+          setOfflineRecoveryNotice(OFFLINE_RECOVERY_FRIENDLY_MESSAGE);
+        } else {
+          setOfflineRecoveryNotice('');
         }
         setSelectedTaskId(null);
+        scrollWaBannerIntoView();
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDirectDeliveredSubmit = async (
+    e: React.FormEvent,
+    task: Assignment
+  ) => {
+    e.preventDefault();
+    if (submitting) return;
+    setFormValidationErr('');
+
+    const effectiveDeliveredJenis: VehicleCoolingType =
+      task.departureData?.jenisKendaraan || deliveredJenisKendaraan;
+    const isPendingin = effectiveDeliveredJenis !== 'Non Pendingin';
+    const startKm = task.departureData?.kmAwal ?? 0;
+
+    if (kmSampai.trim() === '' || !Number.isFinite(Number(kmSampai))) {
+      setFormValidationErr('Odometer KM Sampai wajib diisi.');
+      return;
+    }
+    if (Number(kmSampai) < startKm) {
+      setFormValidationErr(
+        `Odometer KM Sampai (${Number(kmSampai).toLocaleString(
+          'id-ID'
+        )} km) tidak boleh lebih kecil dari KM Awal (${startKm.toLocaleString(
+          'id-ID'
+        )} km).`
+      );
+      return;
+    }
+    if (isPendingin && !suhuSampai.trim()) {
+      setFormValidationErr(
+        'Suhu Serah Sampai (°C) wajib diisi untuk Mobil Pendingin.'
+      );
+      return;
+    }
+    if (!bbmSampai.trim()) {
+      setFormValidationErr('Posisi BBM Sampai wajib dipilih.');
+      return;
+    }
+    if (!kondisiSampai.trim()) {
+      setFormValidationErr('Kondisi Muatan & Segel Saat Sampai wajib dipilih.');
+      return;
+    }
+    if (!fotoOdometerSampai) {
+      setFormValidationErr('Foto Odometer Sampai wajib diunggah.');
+      return;
+    }
+    if (isPendingin && !fotoSuhuSampai) {
+      setFormValidationErr(
+        'Foto Monitor Pendingin Sampai wajib diunggah untuk Mobil Pendingin.'
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const deliveredPayload: DriverDeliveredSubmitPayload = {
+        jenisKendaraan: effectiveDeliveredJenis,
+        kmSampai: Number(kmSampai) || 0,
+        suhuSampai: isPendingin ? suhuSampai.trim() : '',
+        bbmSampai: bbmSampai.trim(),
+        kondisiSampai: kondisiSampai.trim(),
+        catatanSampai: catatanSampai.trim(),
+        fotoOdometerSampai: fotoOdometerSampai || undefined,
+        fotoSuhuSampai: isPendingin ? fotoSuhuSampai || undefined : undefined,
+      };
+
+      const candidateDeliveredTask: Assignment = {
+        ...task,
+        driverCode: task.driverCode || driver.id || task.driverId,
+        status: TaskStatus.DELIVERED,
+        deliveredAt: nowIso,
+        deliveredData: {
+          timestamp: nowIso,
+          jenisKendaraan: deliveredPayload.jenisKendaraan || effectiveDeliveredJenis,
+          kmSampai: deliveredPayload.kmSampai,
+          suhuSampai: deliveredPayload.suhuSampai,
+          bbmSampai: deliveredPayload.bbmSampai,
+          kondisiSampai: deliveredPayload.kondisiSampai,
+          catatanSampai: deliveredPayload.catatanSampai,
+          fotoOdometerSampai: deliveredPayload.fotoOdometerSampai,
+          fotoSuhuSampai: deliveredPayload.fotoSuhuSampai,
+        },
+      };
+
+      void cacheSuratTugasSnapshotLocally(candidateDeliveredTask, driver.id);
+      setCachedDriverTasks((prev) => {
+        const exists = prev.some((item) => item.id === candidateDeliveredTask.id);
+        return exists
+          ? prev.map((item) =>
+              item.id === candidateDeliveredTask.id ? candidateDeliveredTask : item
+            )
+          : [candidateDeliveredTask, ...prev];
+      });
+
+      const waLog = await onSubmitDelivered(
+        task.id,
+        deliveredPayload,
+        waTargetMode,
+        autoOpenWa,
+        candidateDeliveredTask
+      );
+      if (waLog) {
+        void clearDriverFormDraft(task.id);
+        if (typeof window !== 'undefined') {
+          try {
+            window.sessionStorage.removeItem('crk_driver_open_task_id');
+          } catch {
+            // Ignore
+          }
+        }
+        setLastSentWaLog(waLog);
+        if (waLog.gatewayDetail?.includes('Pending Sync Queue')) {
+          setOfflineRecoveryNotice(OFFLINE_RECOVERY_FRIENDLY_MESSAGE);
+        } else {
+          setOfflineRecoveryNotice('');
+        }
+        setSelectedTaskId(null);
+        scrollWaBannerIntoView();
       }
     } finally {
       setSubmitting(false);
@@ -1449,28 +1561,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     if (submitting) return;
     setFormValidationErr('');
 
-    const effectiveHandoverJenis: VehicleCoolingType =
-      task.departureData?.jenisKendaraan || handoverJenisKendaraan;
-    const isPendingin = effectiveHandoverJenis !== 'Non Pendingin';
-
-    if (kmAkhir === '' || !penerimaNama.trim()) {
-      setFormValidationErr('KM Akhir dan Nama Penerima wajib diisi.');
-      return;
-    }
-    if (isPendingin && !suhuAkhir.trim()) {
-      setFormValidationErr(
-        'Suhu Monitor Serah Terima wajib diisi untuk Mobil Pendingin.'
-      );
-      return;
-    }
-    if (!fotoOdometerSerahTerima) {
-      setFormValidationErr('Foto Odometer Serah Terima wajib diunggah.');
-      return;
-    }
-    if (isPendingin && !fotoSuhuSerahTerima) {
-      setFormValidationErr(
-        'Foto Monitor Pendingin Serah Terima wajib diunggah untuk Mobil Pendingin.'
-      );
+    if (!penerimaNama.trim()) {
+      setFormValidationErr('Nama Penerima Serah Terima wajib diisi.');
       return;
     }
     if (!fotoBuktiSerahTerima) {
@@ -1479,34 +1571,55 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
     if (!tandaTanganPenerima) {
       setFormValidationErr(
-        'Tanda Tangan Penerima pada canvas wajib diisi.'
+        'Canvas Tanda Tangan Penerima wajib ditandatangani.'
       );
       return;
     }
+
+    const effectiveHandoverJenis: VehicleCoolingType =
+      task.deliveredData?.jenisKendaraan ||
+      task.departureData?.jenisKendaraan ||
+      'Mobil Pendingin';
+    const isPendingin = effectiveHandoverJenis !== 'Non Pendingin';
+    const inheritedKmAkhir =
+      task.deliveredData?.kmSampai ?? task.departureData?.kmAwal ?? 0;
+    const inheritedSuhuAkhir = isPendingin
+      ? task.deliveredData?.suhuSampai || task.departureData?.suhuAwal || ''
+      : '';
+    const inheritedBbmAkhir = task.deliveredData?.bbmSampai || '1/2 Tangki';
+    const inheritedKondisiAkhir =
+      task.deliveredData?.kondisiSampai ||
+      (isPendingin
+        ? 'Suhu & Segel Utuh - Lengkap'
+        : 'Segel & Muatan Utuh - Lengkap');
+    const inheritedFotoOdo = task.deliveredData?.fotoOdometerSampai;
+    const inheritedFotoSuhu = isPendingin
+      ? task.deliveredData?.fotoSuhuSampai
+      : undefined;
 
     setSubmitting(true);
     try {
       const nowIso = new Date().toISOString();
       const handoverPayload: DriverHandoverSubmitPayload = {
         jenisKendaraan: effectiveHandoverJenis,
-        kmAkhir: Number(kmAkhir) || 0,
-        suhuAkhir: isPendingin ? suhuAkhir.trim() : '',
-        bbmAkhir,
+        kmAkhir: inheritedKmAkhir,
+        suhuAkhir: inheritedSuhuAkhir,
+        bbmAkhir: inheritedBbmAkhir,
         penerimaNama: penerimaNama.trim(),
-        kondisiAkhir,
-        catatanSerahTerima,
-        fotoOdometerSerahTerima: fotoOdometerSerahTerima || undefined,
-        fotoSuhuSerahTerima: isPendingin
-          ? fotoSuhuSerahTerima || undefined
-          : undefined,
+        kondisiAkhir: inheritedKondisiAkhir,
+        catatanSerahTerima: catatanSerahTerima.trim(),
+        fotoOdometerSerahTerima: inheritedFotoOdo,
+        fotoSuhuSerahTerima: inheritedFotoSuhu,
         fotoBuktiSerahTerima: fotoBuktiSerahTerima || undefined,
         tandaTanganPenerima: tandaTanganPenerima || undefined,
       };
 
       const candidateHandoverTask: Assignment = {
         ...task,
+        driverCode: task.driverCode || driver.id || task.driverId,
         status: TaskStatus.HANDOVER,
-        deliveredAt: task.deliveredAt || nowIso,
+        deliveredAt:
+          task.deliveredAt || task.deliveredData?.timestamp || nowIso,
         handoverData: {
           timestamp: nowIso,
           kmAkhir: handoverPayload.kmAkhir,
@@ -1522,11 +1635,14 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         },
       };
 
-      const fsResult = await submitReportToFirestoreWithOfflineRecovery({
-        assignmentId: task.id,
-        stage: 'SERAH_TERIMA',
-        candidateAssignment: candidateHandoverTask,
-        handoverPayload,
+      void cacheSuratTugasSnapshotLocally(candidateHandoverTask, driver.id);
+      setCachedDriverTasks((prev) => {
+        const exists = prev.some((item) => item.id === candidateHandoverTask.id);
+        return exists
+          ? prev.map((item) =>
+              item.id === candidateHandoverTask.id ? candidateHandoverTask : item
+            )
+          : [candidateHandoverTask, ...prev];
       });
 
       const waLog = await onSubmitHandover(
@@ -1534,14 +1650,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         handoverPayload,
         waTargetMode,
         autoOpenWa,
-        fsResult.resolvedAssignment,
-        {
-          firestoreAlreadySynced: fsResult.syncedToFirestore,
-          firestoreQueuedInPortal: fsResult.queuedOffline,
-          resolvedAssignment: fsResult.resolvedAssignment,
-        }
+        candidateHandoverTask
       );
-      if (waLog || fsResult.syncedToFirestore || fsResult.queuedOffline) {
+      if (waLog) {
         void clearDriverFormDraft(task.id);
         if (typeof window !== 'undefined') {
           try {
@@ -1550,10 +1661,14 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             // Ignore
           }
         }
-        if (waLog) {
-          setLastSentWaLog(waLog);
+        setLastSentWaLog(waLog);
+        if (waLog.gatewayDetail?.includes('Pending Sync Queue')) {
+          setOfflineRecoveryNotice(OFFLINE_RECOVERY_FRIENDLY_MESSAGE);
+        } else {
+          setOfflineRecoveryNotice('');
         }
         setSelectedTaskId(null);
+        scrollWaBannerIntoView();
       }
     } finally {
       setSubmitting(false);
@@ -1771,20 +1886,30 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       };
     }
 
-    // Active task in transit / delivered (Handover verification stage)
+    // Active task in transit (Delivered form) or already Delivered (Handover Berita Acara stage)
     const effectiveCooling: VehicleCoolingType =
+      verificationTargetTask.deliveredData?.jenisKendaraan ||
       verificationTargetTask.departureData?.jenisKendaraan ||
-      (isExpanded ? handoverJenisKendaraan : 'Mobil Pendingin');
+      (isExpanded ? deliveredJenisKendaraan : 'Mobil Pendingin');
     const kmParsed = formatKm(verificationTargetTask.departureData?.kmAwal);
     const suhuFormatted =
       effectiveCooling === 'Non Pendingin'
         ? null
         : formatSuhu(verificationTargetTask.departureData?.suhuAwal);
 
+    const activeArrivalKmRaw =
+      verificationTargetTask.status === TaskStatus.DELIVERED
+        ? verificationTargetTask.deliveredData?.kmSampai !== undefined
+          ? String(verificationTargetTask.deliveredData.kmSampai)
+          : ''
+        : isExpanded
+        ? kmSampai
+        : '';
+
     let kmAkhirDeltaText: string | null = null;
     let kmAkhirInvalid = false;
-    if (isExpanded && kmAkhir.trim() !== '') {
-      const akhirNum = Number(kmAkhir);
+    if (activeArrivalKmRaw.trim() !== '') {
+      const akhirNum = Number(activeArrivalKmRaw);
       const startNum = verificationTargetTask.departureData?.kmAwal ?? 0;
       if (!Number.isFinite(akhirNum) || akhirNum < startNum) {
         kmAkhirInvalid = true;
@@ -1793,10 +1918,15 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       }
     }
 
+    const rawArrivalSuhu =
+      verificationTargetTask.status === TaskStatus.DELIVERED
+        ? verificationTargetTask.deliveredData?.suhuSampai || ''
+        : isExpanded
+        ? suhuSampai
+        : '';
+
     const suhuAkhirFormatted =
-      isExpanded && effectiveCooling !== 'Non Pendingin'
-        ? formatSuhu(suhuAkhir)
-        : null;
+      effectiveCooling !== 'Non Pendingin' ? formatSuhu(rawArrivalSuhu) : null;
 
     return {
       hasTask: true,
@@ -1821,9 +1951,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     jenisKendaraan,
     kmAwal,
     suhuAwal,
-    handoverJenisKendaraan,
-    kmAkhir,
-    suhuAkhir,
+    deliveredJenisKendaraan,
+    kmSampai,
+    suhuSampai,
   ]);
 
   const handleFocusVerificationField = (field: 'km' | 'suhu') => {
@@ -1833,6 +1963,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
     const isTargetWaiting =
       verificationTargetTask.status === TaskStatus.MENUNGGU_BERANGKAT;
+    const isTargetInTransit =
+      verificationTargetTask.status === TaskStatus.DALAM_PERJALANAN;
     if (selectedTaskId !== verificationTargetTask.id) {
       openTaskForm(verificationTargetTask);
     }
@@ -1842,9 +1974,11 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           ? field === 'km'
             ? 'driver-input-km-awal'
             : 'driver-input-suhu-awal'
-          : field === 'km'
-          ? 'driver-input-km-akhir'
-          : 'driver-input-suhu-akhir';
+          : isTargetInTransit
+          ? field === 'km'
+            ? 'driver-input-km-sampai'
+            : 'driver-input-suhu-sampai'
+          : 'driver-input-penerima-nama';
         const inputEl = window.document.getElementById(
           targetId
         ) as HTMLInputElement | null;
@@ -2235,7 +2369,24 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     }
                     payloadSummary = parts.join(' · ');
                   } else if (item.stage === 'DELIVERED') {
+                    const kmDeliv =
+                      item.deliveredPayload?.kmSampai ??
+                      snap?.deliveredData?.kmSampai;
+                    const suhuDeliv =
+                      item.deliveredPayload?.suhuSampai ||
+                      snap?.deliveredData?.suhuSampai;
+                    const parts: string[] = [];
+                    if (kmDeliv !== undefined && kmDeliv >= 0) {
+                      parts.push(`KM Sampai ${kmDeliv.toLocaleString('id-ID')}`);
+                    }
+                    if (suhuDeliv) {
+                      parts.push(`Suhu Sampai ${suhuDeliv}`);
+                    }
+                    if (item.photosStoredInVault) {
+                      parts.push('Foto Sampai tersimpan di memori HP');
+                    }
                     payloadSummary =
+                      parts.join(' · ') ||
                       item.deliveredCatatan ||
                       'Armada tiba di lokasi tujuan';
                   } else {
@@ -2244,16 +2395,17 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                       snap?.handoverData?.penerimaNama;
                     const kmAkhirVal =
                       item.handoverPayload?.kmAkhir ??
-                      snap?.handoverData?.kmAkhir;
+                      snap?.handoverData?.kmAkhir ??
+                      snap?.deliveredData?.kmSampai;
                     const parts: string[] = [];
                     if (penerima) parts.push(`Penerima: ${penerima}`);
                     if (kmAkhirVal !== undefined && kmAkhirVal >= 0) {
                       parts.push(
-                        `KM Akhir ${kmAkhirVal.toLocaleString('id-ID')}`
+                        `KM Sampai ${kmAkhirVal.toLocaleString('id-ID')}`
                       );
                     }
                     if (item.photosStoredInVault) {
-                      parts.push('Foto & TTD tersimpan di memori HP');
+                      parts.push('Bukti & TTD tersimpan di memori HP');
                     }
                     payloadSummary = parts.join(' · ');
                   }
@@ -2624,9 +2776,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           </div>
         </div>
 
-        {/* Real-Time Latest WhatsApp Notification Banner (Departure + Handover Summary) */}
+        {/* Real-Time Latest WhatsApp Notification Banner (Departure + Delivered + Handover Summary) */}
         {lastSentWaLog && (
-          <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-5">
+          <div
+            ref={waBannerRef}
+            className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-5"
+          >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
                 <MessageSquareShare className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
@@ -2734,21 +2889,24 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
               activeTasks.map((task) => {
                 const isExpanded = selectedTaskId === task.id;
                 const isWaiting = task.status === TaskStatus.MENUNGGU_BERANGKAT;
+                const isInTransit = task.status === TaskStatus.DALAM_PERJALANAN;
                 const isDelivered = task.status === TaskStatus.DELIVERED;
-                const kmDelta =
-                  !isWaiting &&
+                const kmSampaiDelta =
+                  isInTransit &&
                   task.departureData &&
-                  kmAkhir !== '' &&
-                  Number(kmAkhir) >= task.departureData.kmAwal
-                    ? Number(kmAkhir) - task.departureData.kmAwal
+                  kmSampai !== '' &&
+                  Number(kmSampai) >= task.departureData.kmAwal
+                    ? Number(kmSampai) - task.departureData.kmAwal
                     : null;
 
                 const isDeparturePendingin =
                   jenisKendaraan === 'Mobil Pendingin';
-                const effectiveHandoverJenis: VehicleCoolingType =
-                  task.departureData?.jenisKendaraan || handoverJenisKendaraan;
-                const isHandoverPendingin =
-                  effectiveHandoverJenis !== 'Non Pendingin';
+                const effectiveDeliveredJenis: VehicleCoolingType =
+                  task.deliveredData?.jenisKendaraan ||
+                  task.departureData?.jenisKendaraan ||
+                  deliveredJenisKendaraan;
+                const isDeliveredPendingin =
+                  effectiveDeliveredJenis !== 'Non Pendingin';
                 const displayOrigin =
                   task.departureData?.titikKeberangkatan ||
                   task.origin ||
@@ -2775,11 +2933,13 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                         <span className="font-mono font-semibold text-slate-800">
                           {task.plateNumber}
                         </span>
-                        {task.departureData?.jenisKendaraan && (
+                        {(task.deliveredData?.jenisKendaraan ||
+                          task.departureData?.jenisKendaraan) && (
                           <>
                             <span aria-hidden="true">·</span>
                             <span className="font-semibold text-slate-700">
-                              {task.departureData.jenisKendaraan}
+                              {task.deliveredData?.jenisKendaraan ||
+                                task.departureData?.jenisKendaraan}
                             </span>
                           </>
                         )}
@@ -2812,7 +2972,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                         ) : isDelivered ? (
                           <span className="inline-flex items-center gap-1.5 text-indigo-700">
                             <PackageCheck className="h-3.5 w-3.5" />
-                            Delivered (Siap Handover)
+                            Delivered (Siap Berita Acara Handover)
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-sky-700">
@@ -2867,53 +3027,34 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                                 <Send className="h-3.5 w-3.5" />
                                 Isi Data Keberangkatan
                               </>
+                            ) : isInTransit ? (
+                              <>
+                                <PackageCheck className="h-3.5 w-3.5" />
+                                Isi Form Delivered (Sampai)
+                              </>
                             ) : (
                               <>
                                 <ClipboardCheck className="h-3.5 w-3.5" />
-                                {isDelivered
-                                  ? 'Selesaikan Handover'
-                                  : 'Isi Serah Terima (Handover)'}
+                                Isi Berita Acara Serah Terima
                               </>
                             )}
                           </button>
 
-                          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                            {task.status === TaskStatus.DALAM_PERJALANAN && (
-                              <button
-                                type="button"
-                                disabled={submittingDeliveredId === task.id}
-                                onClick={() => handleQuickDelivered(task)}
-                                className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-900 transition-colors hover:bg-indigo-100 disabled:opacity-50 whitespace-nowrap sm:min-h-[40px] sm:rounded-lg"
-                              >
-                                <PackageCheck className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">
-                                  {submittingDeliveredId === task.id
-                                    ? 'Memproses...'
-                                    : 'Tiba (Delivered)'}
-                                </span>
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleSendRealtimeTaskWa(task, waTargetMode)
-                              }
-                              className={`inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 whitespace-nowrap sm:min-h-[40px] sm:rounded-lg ${
-                                task.status !== TaskStatus.DALAM_PERJALANAN
-                                  ? 'col-span-2'
-                                  : ''
-                              }`}
-                            >
-                              <Phone className="h-3.5 w-3.5 shrink-0" />
-                              <span>Kirim WA</span>
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleSendRealtimeTaskWa(task, waTargetMode)
+                            }
+                            className="inline-flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 whitespace-nowrap sm:min-h-[40px] sm:w-auto sm:rounded-lg"
+                          >
+                            <Phone className="h-3.5 w-3.5 shrink-0" />
+                            <span>Kirim WA</span>
+                          </button>
                         </div>
                       )}
                     </div>
 
-                    {/* Recorded Departure & Arrival Info */}
+                    {/* Recorded Departure & Delivered Info */}
                     {!isWaiting && task.departureData && (
                       <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-600">
                         <span>
@@ -2961,13 +3102,42 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               </span>
                             </>
                           )}
-                        {task.deliveredAt && (
+                        {(task.deliveredAt || task.deliveredData?.timestamp) && (
                           <>
                             <span aria-hidden="true">·</span>
                             <span>
-                              Waktu Tiba (Delivered):{' '}
+                              Sampai (Delivered):{' '}
                               <strong className="font-mono text-indigo-800 tabular-nums">
-                                {formatRealTimeTimestamp(task.deliveredAt)}
+                                {formatRealTimeTimestamp(
+                                  task.deliveredData?.timestamp ||
+                                    task.deliveredAt ||
+                                    ''
+                                )}
+                              </strong>
+                            </span>
+                          </>
+                        )}
+                        {task.deliveredData?.kmSampai !== undefined && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              KM Sampai:{' '}
+                              <strong className="font-mono text-indigo-900 tabular-nums">
+                                {task.deliveredData.kmSampai.toLocaleString(
+                                  'id-ID'
+                                )}{' '}
+                                km
+                              </strong>
+                            </span>
+                          </>
+                        )}
+                        {task.deliveredData?.suhuSampai && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              Suhu Sampai:{' '}
+                              <strong className="font-mono text-sky-800 tabular-nums">
+                                {task.deliveredData.suhuSampai}
                               </strong>
                             </span>
                           </>
@@ -2976,7 +3146,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     )}
 
                     {/* ===================================================== */}
-                    {/* FORM KEBERANGKATAN RANTAI PENGIRIMAN DINGIN           */}
+                    {/* STAGE 1: FORM KEBERANGKATAN RANTAI PENGIRIMAN DINGIN  */}
                     {/* ===================================================== */}
                     {isExpanded && isWaiting && (
                       <form
@@ -3212,6 +3382,13 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           />
                         </div>
 
+                        {formValidationErr && (
+                          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                            <span>{formValidationErr}</span>
+                          </div>
+                        )}
+
                         <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
@@ -3281,19 +3458,19 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     )}
 
                     {/* ===================================================== */}
-                    {/* FORM SERAH TERIMA TUGAS RANTAI DINGIN                 */}
+                    {/* STAGE 2: FORM INPUT DELIVERED (SAMPAI DI TUJUAN)      */}
                     {/* ===================================================== */}
-                    {isExpanded && !isWaiting && (
+                    {isExpanded && isInTransit && (
                       <form
-                        onSubmit={(e) => handleDirectHandoverSubmit(e, task)}
+                        onSubmit={(e) => handleDirectDeliveredSubmit(e, task)}
                         className="mt-5 border-t border-slate-200 pt-5 space-y-4"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <h3 className="text-sm font-bold text-slate-900">
-                            Formulir Serah Terima Tugas Rantai Dingin
+                            Form Input Delivered (Sampai di Tujuan)
                           </h3>
                           <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
-                            <Clock className="h-3.5 w-3.5 text-emerald-700" />
+                            <Clock className="h-3.5 w-3.5 text-indigo-700" />
                             <span>
                               Timestamp Real-Time:{' '}
                               {formatRealTimeTimestamp(liveNow)}
@@ -3301,19 +3478,19 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           </div>
                         </div>
 
-                        {/* Departure Data & Cooling Mode Sync Box */}
+                        {/* Departure Reference & Cooling Mode Sync Box */}
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700 space-y-1.5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="font-semibold text-slate-900">
                               Menyesuaikan Keberangkatan:{' '}
                               <span
                                 className={
-                                  isHandoverPendingin
+                                  isDeliveredPendingin
                                     ? 'text-sky-800'
                                     : 'text-slate-800'
                                 }
                               >
-                                {effectiveHandoverJenis}
+                                {effectiveDeliveredJenis}
                               </span>
                             </p>
 
@@ -3322,12 +3499,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    handleSelectHandoverJenisFallback(
+                                    handleSelectDeliveredJenisFallback(
                                       'Mobil Pendingin'
                                     )
                                   }
                                   className={`rounded px-2 py-1 text-[11px] font-semibold ${
-                                    isHandoverPendingin
+                                    isDeliveredPendingin
                                       ? 'bg-white text-slate-900 shadow-sm'
                                       : 'text-slate-600'
                                   }`}
@@ -3337,12 +3514,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    handleSelectHandoverJenisFallback(
+                                    handleSelectDeliveredJenisFallback(
                                       'Non Pendingin'
                                     )
                                   }
                                   className={`rounded px-2 py-1 text-[11px] font-semibold ${
-                                    !isHandoverPendingin
+                                    !isDeliveredPendingin
                                       ? 'bg-white text-slate-900 shadow-sm'
                                       : 'text-slate-600'
                                   }`}
@@ -3367,7 +3544,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                                 'id-ID'
                               )}{' '}
                               km
-                              {isHandoverPendingin &&
+                              {isDeliveredPendingin &&
                               task.departureData.suhuAwal
                                 ? ` · Suhu Awal: ${task.departureData.suhuAwal}`
                                 : ''}{' '}
@@ -3385,45 +3562,45 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div>
                             <label
-                              htmlFor="driver-input-km-akhir"
+                              htmlFor="driver-input-km-sampai"
                               className="block text-xs font-semibold text-slate-700"
                             >
-                              Odometer KM Akhir *
+                              Odometer KM Sampai *
                             </label>
                             <input
-                              id="driver-input-km-akhir"
+                              id="driver-input-km-sampai"
                               type="number"
                               min={task.departureData?.kmAwal || 0}
                               required
-                              value={kmAkhir}
-                              onChange={(e) => setKmAkhir(e.target.value)}
-                              placeholder="Masukkan angka KM tiba"
+                              value={kmSampai}
+                              onChange={(e) => setKmSampai(e.target.value)}
+                              placeholder="Masukkan angka KM saat sampai"
                               className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
                             />
-                            {kmDelta !== null && (
+                            {kmSampaiDelta !== null && (
                               <p className="mt-1 font-mono text-xs text-emerald-700 tabular-nums">
-                                Jarak tempuh: {kmDelta.toLocaleString('id-ID')}{' '}
-                                km
+                                Jarak tempuh:{' '}
+                                {kmSampaiDelta.toLocaleString('id-ID')} km
                               </p>
                             )}
                           </div>
 
-                          {isHandoverPendingin && (
+                          {isDeliveredPendingin && (
                             <div>
                               <label
-                                htmlFor="driver-input-suhu-akhir"
+                                htmlFor="driver-input-suhu-sampai"
                                 className="flex items-center gap-1 text-xs font-semibold text-slate-700"
                               >
                                 <Thermometer className="h-3.5 w-3.5 text-sky-700" />
-                                <span>Suhu Serah Terima (°C) *</span>
+                                <span>Suhu Serah Sampai (°C) *</span>
                               </label>
                               <input
-                                id="driver-input-suhu-akhir"
+                                id="driver-input-suhu-sampai"
                                 type="text"
                                 required
-                                value={suhuAkhir}
-                                onChange={(e) => setSuhuAkhir(e.target.value)}
-                                placeholder="Ketik suhu monitor pendingin saat tiba"
+                                value={suhuSampai}
+                                onChange={(e) => setSuhuSampai(e.target.value)}
+                                placeholder="Ketik suhu monitor pendingin saat sampai"
                                 className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
                               />
                             </div>
@@ -3431,25 +3608,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
                           <div>
                             <label className="block text-xs font-semibold text-slate-700">
-                              Nama Penerima Serah Terima *
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={penerimaNama}
-                              onChange={(e) => setPenerimaNama(e.target.value)}
-                              placeholder="Nama petugas penerima"
-                              className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700">
-                              Posisi BBM Akhir
+                              Posisi BBM Sampai *
                             </label>
                             <select
-                              value={bbmAkhir}
-                              onChange={(e) => setBbmAkhir(e.target.value)}
+                              required
+                              value={bbmSampai}
+                              onChange={(e) => setBbmSampai(e.target.value)}
                               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
                             >
                               <option value="Penuh (Full)">Penuh (Full)</option>
@@ -3464,18 +3628,19 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
                           <div
                             className={
-                              isHandoverPendingin ? 'sm:col-span-2' : ''
+                              isDeliveredPendingin ? '' : 'sm:col-span-2'
                             }
                           >
                             <label className="block text-xs font-semibold text-slate-700">
-                              Kondisi Muatan &amp; Segel Saat Serah Terima
+                              Kondisi Muatan &amp; Segel Saat Sampai *
                             </label>
                             <select
-                              value={kondisiAkhir}
-                              onChange={(e) => setKondisiAkhir(e.target.value)}
+                              required
+                              value={kondisiSampai}
+                              onChange={(e) => setKondisiSampai(e.target.value)}
                               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
                             >
-                              {isHandoverPendingin ? (
+                              {isDeliveredPendingin ? (
                                 <>
                                   <option value="Suhu & Segel Utuh - Lengkap">
                                     Suhu &amp; Segel Utuh - Lengkap
@@ -3506,34 +3671,198 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
                         <div
                           className={`grid grid-cols-1 gap-4 ${
-                            isHandoverPendingin
-                              ? 'sm:grid-cols-3'
-                              : 'sm:grid-cols-2'
+                            isDeliveredPendingin ? 'sm:grid-cols-2' : ''
                           }`}
                         >
                           <PhotoUploadField
-                            label="Foto Odometer Serah Terima"
+                            label="Foto Odometer Sampai"
+                            helperText="Pastikan angka KM saat sampai terlihat jelas"
                             required
-                            value={fotoOdometerSerahTerima}
-                            onChange={setFotoOdometerSerahTerima}
+                            value={fotoOdometerSampai}
+                            onChange={setFotoOdometerSampai}
                           />
 
-                          {isHandoverPendingin && (
+                          {isDeliveredPendingin && (
                             <PhotoUploadField
-                              label="Foto Monitor Pendingin Serah Terima"
+                              label="Foto Monitor Pendingin Sampai"
+                              helperText="Pastikan layar suhu pendingin saat sampai terbaca jelas"
                               required
-                              value={fotoSuhuSerahTerima}
-                              onChange={setFotoSuhuSerahTerima}
+                              value={fotoSuhuSampai}
+                              onChange={setFotoSuhuSampai}
                             />
                           )}
+                        </div>
 
-                          <PhotoUploadField
-                            label="Foto Bukti Serah Terima"
-                            required
-                            value={fotoBuktiSerahTerima}
-                            onChange={setFotoBuktiSerahTerima}
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Catatan Sampai (Opsional)
+                          </label>
+                          <input
+                            type="text"
+                            value={catatanSampai}
+                            onChange={(e) => setCatatanSampai(e.target.value)}
+                            placeholder="Misal: Armada telah tiba di area bongkar / antre loading dock"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
                           />
                         </div>
+
+                        {formValidationErr && (
+                          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                            <span>{formValidationErr}</span>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
+                              Tujuan WA Otomatis:
+                            </span>
+                            <div className="inline-flex rounded-lg bg-slate-100 p-1">
+                              <button
+                                type="button"
+                                onClick={() => setWaTargetMode('DRIVER')}
+                                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                                  waTargetMode === 'DRIVER'
+                                    ? 'bg-white text-slate-900 shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                WA Driver
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setWaTargetMode('GROUP')}
+                                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                                  waTargetMode === 'GROUP'
+                                    ? 'bg-white text-slate-900 shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Grup WA
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setWaTargetMode('DIRECT')}
+                                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                                  waTargetMode === 'DIRECT'
+                                    ? 'bg-white text-slate-900 shadow-sm'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                WA Dispatcher
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-center sm:justify-end">
+                            <button
+                              type="button"
+                              disabled={submitting}
+                              onClick={closeTaskForm}
+                              className="min-h-[44px] rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0 disabled:opacity-50 sm:min-h-[40px] sm:rounded-lg"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={submitting}
+                              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-800 whitespace-nowrap shrink-0 disabled:opacity-50 sm:min-h-[40px] sm:rounded-lg"
+                            >
+                              <PackageCheck className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">
+                                {submitting
+                                  ? 'Menyimpan...'
+                                  : 'Simpan Delivered & Kirim WA'}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* ===================================================== */}
+                    {/* STAGE 3: FORM SELESAI HANDOVER (BERITA ACARA)         */}
+                    {/* ===================================================== */}
+                    {isExpanded && isDelivered && (
+                      <form
+                        onSubmit={(e) => handleDirectHandoverSubmit(e, task)}
+                        className="mt-5 border-t border-slate-200 pt-5 space-y-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            Formulir Berita Acara Serah Terima (Selesai Handover)
+                          </h3>
+                          <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                            <Clock className="h-3.5 w-3.5 text-emerald-700" />
+                            <span>
+                              Timestamp Real-Time:{' '}
+                              {formatRealTimeTimestamp(liveNow)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Read-Only Summary of Recorded Delivered (Sampai) Data */}
+                        <div className="rounded-lg border border-indigo-200/80 bg-indigo-50/50 px-3.5 py-2.5 text-xs text-slate-700 space-y-1">
+                          <p className="font-semibold text-slate-900">
+                            Ringkasan Data Delivered (Sampai) Tercatat
+                          </p>
+                          <p className="font-mono text-[11px] text-slate-600 tabular-nums">
+                            Waktu Sampai:{' '}
+                            {formatRealTimeTimestamp(
+                              task.deliveredData?.timestamp ||
+                                task.deliveredAt ||
+                                ''
+                            )}
+                            {task.deliveredData?.kmSampai !== undefined
+                              ? ` · KM Sampai: ${task.deliveredData.kmSampai.toLocaleString(
+                                  'id-ID'
+                                )} km`
+                              : ''}
+                            {isDeliveredPendingin &&
+                            task.deliveredData?.suhuSampai
+                              ? ` · Suhu Sampai: ${task.deliveredData.suhuSampai}`
+                              : ''}
+                            {task.deliveredData?.bbmSampai
+                              ? ` · BBM Sampai: ${task.deliveredData.bbmSampai}`
+                              : ''}
+                            {task.deliveredData?.kondisiSampai
+                              ? ` · Kondisi: ${task.deliveredData.kondisiSampai}`
+                              : ''}
+                          </p>
+                        </div>
+
+                        {formValidationErr && (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
+                            {formValidationErr}
+                          </div>
+                        )}
+
+                        <div>
+                          <label
+                            htmlFor="driver-input-penerima-nama"
+                            className="block text-xs font-semibold text-slate-700"
+                          >
+                            Nama Penerima Serah Terima *
+                          </label>
+                          <input
+                            id="driver-input-penerima-nama"
+                            type="text"
+                            required
+                            value={penerimaNama}
+                            onChange={(e) => setPenerimaNama(e.target.value)}
+                            placeholder="Nama lengkap petugas penerima di lokasi tujuan"
+                            className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
+                          />
+                        </div>
+
+                        <PhotoUploadField
+                          label="Foto Bukti Serah Terima"
+                          helperText="Unggah foto bukti serah terima barang / surat jalan bertanda tangan"
+                          required
+                          value={fotoBuktiSerahTerima}
+                          onChange={setFotoBuktiSerahTerima}
+                        />
 
                         <SignatureCanvas
                           label="Canvas Tanda Tangan Penerima"
@@ -3552,10 +3881,17 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                             onChange={(e) =>
                               setCatatanSerahTerima(e.target.value)
                             }
-                            placeholder="Misal: Diserahterimakan di loading dock tujuan"
+                            placeholder="Misal: Diserahterimakan lengkap di loading dock tujuan"
                             className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
                           />
                         </div>
+
+                        {formValidationErr && (
+                          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                            <span>{formValidationErr}</span>
+                          </div>
+                        )}
 
                         <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
@@ -3650,14 +3986,23 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             ) : (
               completedTasks.map((task) => {
                 const startKm = task.departureData?.kmAwal ?? 0;
-                const endKm = task.handoverData?.kmAkhir ?? 0;
+                const endKm =
+                  task.deliveredData?.kmSampai ??
+                  task.handoverData?.kmAkhir ??
+                  0;
                 const totalKm =
                   endKm >= startKm && startKm > 0 ? endKm - startKm : 0;
                 const jenisArmada =
-                  task.departureData?.jenisKendaraan || 'Mobil Pendingin';
+                  task.deliveredData?.jenisKendaraan ||
+                  task.departureData?.jenisKendaraan ||
+                  'Mobil Pendingin';
                 const isPendingin = jenisArmada !== 'Non Pendingin';
                 const displayOrigin =
                   task.departureData?.titikKeberangkatan || task.origin;
+                const suhuSampaiVal =
+                  task.deliveredData?.suhuSampai ||
+                  task.handoverData?.suhuAkhir ||
+                  '-';
 
                 return (
                   <div
@@ -3742,20 +4087,28 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           </p>
                           <p className="font-mono tabular-nums">
                             <span className="font-sans font-semibold text-slate-700">
-                              Serah Terima:
+                              Delivered (Sampai):
+                            </span>{' '}
+                            {task.deliveredData || task.deliveredAt
+                              ? `${formatRealTimeTimestamp(
+                                  task.deliveredData?.timestamp ||
+                                    task.deliveredAt ||
+                                    ''
+                                )} · KM Sampai ${endKm.toLocaleString(
+                                  'id-ID'
+                                )} (${totalKm.toLocaleString('id-ID')} km)${
+                                  isPendingin ? ` · Suhu ${suhuSampaiVal}` : ''
+                                }`
+                              : '-'}
+                          </p>
+                          <p className="font-mono tabular-nums">
+                            <span className="font-sans font-semibold text-slate-700">
+                              Berita Acara Handover:
                             </span>{' '}
                             {task.handoverData
                               ? `${formatRealTimeTimestamp(
                                   task.handoverData.timestamp
-                                )} · KM Akhir ${endKm.toLocaleString(
-                                  'id-ID'
-                                )} (${totalKm.toLocaleString('id-ID')} km)${
-                                  isPendingin
-                                    ? ` · Suhu ${
-                                        task.handoverData.suhuAkhir || '-'
-                                      }`
-                                    : ''
-                                } · Penerima: ${
+                                )} · Penerima: ${
                                   task.handoverData.penerimaNama || '-'
                                 }`
                               : '-'}
@@ -4351,6 +4704,13 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {expenseValidationErr && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                      <span>{expenseValidationErr}</span>
+                    </div>
+                  )}
 
                   <button
                     type="submit"

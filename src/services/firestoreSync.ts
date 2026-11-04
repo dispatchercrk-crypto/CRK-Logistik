@@ -1084,9 +1084,14 @@ export async function upsertAssignmentInFirestore(
       typeof assignment.handoverData?.kmAkhir === 'number' &&
       Number.isFinite(assignment.handoverData.kmAkhir)
         ? assignment.handoverData.kmAkhir
+        : typeof assignment.deliveredData?.kmSampai === 'number' &&
+          Number.isFinite(assignment.deliveredData.kmSampai)
+        ? assignment.deliveredData.kmSampai
         : -1;
 
-    const rawJenis = assignment.departureData?.jenisKendaraan;
+    const rawJenis =
+      assignment.departureData?.jenisKendaraan ||
+      assignment.deliveredData?.jenisKendaraan;
     const validJenisKendaraan =
       rawJenis === 'Mobil Pendingin' || rawJenis === 'Non Pendingin'
         ? rawJenis
@@ -1096,6 +1101,8 @@ export async function upsertAssignmentInFirestore(
       MAX_LEN.ROUTE_DEST,
       'Menunggu Titik Keberangkatan Driver'
     );
+    const resolvedDeliveredAt =
+      assignment.deliveredAt || assignment.deliveredData?.timestamp || '';
 
     const mutableFields = {
       noSuratJalanFisik: clampString(
@@ -1147,6 +1154,14 @@ export async function upsertAssignmentInFirestore(
             ),
           }
         : {}),
+      ...(resolvedDeliveredAt
+        ? {
+            deliveredAt: clampString(
+              resolvedDeliveredAt,
+              MAX_LEN.ASG_TIMESTAMP
+            ),
+          }
+        : {}),
       status: validStatus,
       depTimestamp: clampString(
         assignment.departureData?.timestamp,
@@ -1180,11 +1195,13 @@ export async function upsertAssignmentInFirestore(
       ),
       hoKmAkhir: hoKm,
       hoSuhuAkhir: clampString(
-        assignment.handoverData?.suhuAkhir,
+        assignment.handoverData?.suhuAkhir ||
+          assignment.deliveredData?.suhuSampai,
         MAX_LEN.ASG_SUHU
       ),
       hoBbmAkhir: clampString(
-        assignment.handoverData?.bbmAkhir,
+        assignment.handoverData?.bbmAkhir ||
+          assignment.deliveredData?.bbmSampai,
         MAX_LEN.ASG_BBM
       ),
       hoPenerima: clampString(
@@ -1192,7 +1209,8 @@ export async function upsertAssignmentInFirestore(
         MAX_LEN.DRIVER_NAME
       ),
       hoKondisi: clampString(
-        assignment.handoverData?.kondisiAkhir,
+        assignment.handoverData?.kondisiAkhir ||
+          assignment.deliveredData?.kondisiSampai,
         MAX_LEN.ASG_KONDISI
       ),
       hoCatatan: clampString(
@@ -1667,15 +1685,12 @@ function mapDocToAssignment(data: Record<string, unknown>): Assignment {
     (typeof data.depKmAwal === 'number' && data.depKmAwal >= 0) ||
     String(data.depSuhuAwal || '').length > 0;
 
-  const hoTimestamp = String(data.hoTimestamp || '');
+  const hoTimestamp = String(data.hoTimestamp || '').trim();
+  const hoPenerima = String(data.hoPenerima || '').trim();
   const hoKmAkhir =
     typeof data.hoKmAkhir === 'number' && data.hoKmAkhir >= 0
       ? data.hoKmAkhir
       : 0;
-  const hasHandover =
-    hoTimestamp.length > 0 ||
-    (typeof data.hoKmAkhir === 'number' && data.hoKmAkhir >= 0) ||
-    String(data.hoPenerima || '').length > 0;
 
   const rawStatus = String(data.status || '');
   const status: TaskStatus =
@@ -1688,6 +1703,25 @@ function mapDocToAssignment(data: Record<string, unknown>): Assignment {
       : rawStatus === TaskStatus.DALAM_PERJALANAN
       ? TaskStatus.DALAM_PERJALANAN
       : TaskStatus.MENUNGGU_BERANGKAT;
+
+  const resolvedDeliveredAt =
+    extractDeliveredAtFromFirestoreNotes(String(data.notes || '')).deliveredAt ||
+    (typeof data.deliveredAt === 'string' && data.deliveredAt.trim()
+      ? data.deliveredAt.trim()
+      : status === TaskStatus.DELIVERED && data.updatedAt
+      ? timestampToIso(data.updatedAt)
+      : undefined);
+
+  const isHandoverCompleted =
+    status === TaskStatus.HANDOVER ||
+    status === TaskStatus.SELESAI ||
+    hoTimestamp.length > 0 ||
+    hoPenerima.length > 0;
+
+  const hasDeliveredMetrics =
+    status === TaskStatus.DELIVERED ||
+    Boolean(resolvedDeliveredAt) ||
+    (typeof data.hoKmAkhir === 'number' && data.hoKmAkhir >= 0);
 
   const originText =
     depTitikBerangkat ||
@@ -1724,14 +1758,7 @@ function mapDocToAssignment(data: Record<string, unknown>): Assignment {
         ? data.volumeCbm.trim()
         : undefined,
     status,
-    deliveredAt:
-      extractDeliveredAtFromFirestoreNotes(String(data.notes || ''))
-        .deliveredAt ||
-      (typeof data.deliveredAt === 'string' && data.deliveredAt.trim()
-        ? data.deliveredAt.trim()
-        : status === TaskStatus.DELIVERED && data.updatedAt
-        ? timestampToIso(data.updatedAt)
-        : undefined),
+    deliveredAt: resolvedDeliveredAt,
     departureData: hasDeparture
       ? {
           timestamp: depTimestamp,
@@ -1748,13 +1775,23 @@ function mapDocToAssignment(data: Record<string, unknown>): Assignment {
           catatanBerangkat: String(data.depCatatan || ''),
         }
       : undefined,
-    handoverData: hasHandover
+    deliveredData: hasDeliveredMetrics
       ? {
-          timestamp: hoTimestamp,
+          timestamp: resolvedDeliveredAt || hoTimestamp || timestampToIso(data.updatedAt),
+          jenisKendaraan: depJenisKendaraan || 'Mobil Pendingin',
+          kmSampai: hoKmAkhir,
+          suhuSampai: String(data.hoSuhuAkhir || ''),
+          bbmSampai: String(data.hoBbmAkhir || ''),
+          kondisiSampai: String(data.hoKondisi || ''),
+        }
+      : undefined,
+    handoverData: isHandoverCompleted
+      ? {
+          timestamp: hoTimestamp || resolvedDeliveredAt || timestampToIso(data.updatedAt),
           kmAkhir: hoKmAkhir,
           suhuAkhir: String(data.hoSuhuAkhir || ''),
           bbmAkhir: String(data.hoBbmAkhir || ''),
-          penerimaNama: String(data.hoPenerima || ''),
+          penerimaNama: hoPenerima,
           kondisiAkhir: String(data.hoKondisi || ''),
           catatanSerahTerima: String(data.hoCatatan || ''),
         }
@@ -2363,6 +2400,17 @@ export interface DriverDepartureSubmitPayload {
   fotoSuhuBerangkat?: string;
 }
 
+export interface DriverDeliveredSubmitPayload {
+  jenisKendaraan?: VehicleCoolingType;
+  kmSampai: number;
+  suhuSampai: string;
+  bbmSampai: string;
+  kondisiSampai: string;
+  catatanSampai?: string;
+  fotoOdometerSampai?: string;
+  fotoSuhuSampai?: string;
+}
+
 export interface DriverHandoverSubmitPayload {
   jenisKendaraan?: VehicleCoolingType;
   kmAkhir: number;
@@ -2394,6 +2442,7 @@ export interface PendingReportSyncItem {
   lastError: string;
   departurePayload?: DriverDepartureSubmitPayload;
   deliveredCatatan?: string;
+  deliveredPayload?: DriverDeliveredSubmitPayload;
   handoverPayload?: DriverHandoverSubmitPayload;
   assignmentSnapshot: Assignment;
 }
@@ -2657,6 +2706,7 @@ export function readLocalStoragePendingReportSyncEntries(): {
           lastError: parsed.lastError || '',
           departurePayload: parsed.departurePayload,
           deliveredCatatan: parsed.deliveredCatatan,
+          deliveredPayload: parsed.deliveredPayload,
           handoverPayload: parsed.handoverPayload,
           assignmentSnapshot: parsed.assignmentSnapshot,
         };
@@ -2703,6 +2753,12 @@ function stripHeavyPhotosFromQueueItem(
     fotoSuhuBerangkat:
       item.departurePayload?.fotoSuhuBerangkat ||
       item.assignmentSnapshot.departureData?.fotoSuhuBerangkat,
+    fotoOdometerSampai:
+      item.deliveredPayload?.fotoOdometerSampai ||
+      item.assignmentSnapshot.deliveredData?.fotoOdometerSampai,
+    fotoSuhuSampai:
+      item.deliveredPayload?.fotoSuhuSampai ||
+      item.assignmentSnapshot.deliveredData?.fotoSuhuSampai,
     fotoOdometerSerahTerima:
       item.handoverPayload?.fotoOdometerSerahTerima ||
       item.assignmentSnapshot.handoverData?.fotoOdometerSerahTerima,
@@ -2727,6 +2783,13 @@ function stripHeavyPhotosFromQueueItem(
           fotoSuhuBerangkat: undefined,
         }
       : undefined,
+    deliveredData: item.assignmentSnapshot.deliveredData
+      ? {
+          ...item.assignmentSnapshot.deliveredData,
+          fotoOdometerSampai: undefined,
+          fotoSuhuSampai: undefined,
+        }
+      : undefined,
     handoverData: item.assignmentSnapshot.handoverData
       ? {
           ...item.assignmentSnapshot.handoverData,
@@ -2747,6 +2810,13 @@ function stripHeavyPhotosFromQueueItem(
             ...item.departurePayload,
             fotoOdometerBerangkat: undefined,
             fotoSuhuBerangkat: undefined,
+          }
+        : undefined,
+      deliveredPayload: item.deliveredPayload
+        ? {
+            ...item.deliveredPayload,
+            fotoOdometerSampai: undefined,
+            fotoSuhuSampai: undefined,
           }
         : undefined,
       handoverPayload: item.handoverPayload
@@ -2899,15 +2969,27 @@ export async function hydratePendingReportSyncItem(
             item.departurePayload.fotoSuhuBerangkat || photos.fotoSuhuBerangkat,
         }
       : undefined,
+    deliveredPayload: item.deliveredPayload
+      ? {
+          ...item.deliveredPayload,
+          fotoOdometerSampai:
+            item.deliveredPayload.fotoOdometerSampai ||
+            photos.fotoOdometerSampai,
+          fotoSuhuSampai:
+            item.deliveredPayload.fotoSuhuSampai || photos.fotoSuhuSampai,
+        }
+      : undefined,
     handoverPayload: item.handoverPayload
       ? {
           ...item.handoverPayload,
           fotoOdometerSerahTerima:
             item.handoverPayload.fotoOdometerSerahTerima ||
-            photos.fotoOdometerSerahTerima,
+            photos.fotoOdometerSerahTerima ||
+            photos.fotoOdometerSampai,
           fotoSuhuSerahTerima:
             item.handoverPayload.fotoSuhuSerahTerima ||
-            photos.fotoSuhuSerahTerima,
+            photos.fotoSuhuSerahTerima ||
+            photos.fotoSuhuSampai,
           fotoBuktiSerahTerima:
             item.handoverPayload.fotoBuktiSerahTerima ||
             photos.fotoBuktiSerahTerima,
@@ -2929,15 +3011,28 @@ export async function hydratePendingReportSyncItem(
               photos.fotoSuhuBerangkat,
           }
         : undefined,
+      deliveredData: item.assignmentSnapshot.deliveredData
+        ? {
+            ...item.assignmentSnapshot.deliveredData,
+            fotoOdometerSampai:
+              item.assignmentSnapshot.deliveredData.fotoOdometerSampai ||
+              photos.fotoOdometerSampai,
+            fotoSuhuSampai:
+              item.assignmentSnapshot.deliveredData.fotoSuhuSampai ||
+              photos.fotoSuhuSampai,
+          }
+        : undefined,
       handoverData: item.assignmentSnapshot.handoverData
         ? {
             ...item.assignmentSnapshot.handoverData,
             fotoOdometerSerahTerima:
               item.assignmentSnapshot.handoverData.fotoOdometerSerahTerima ||
-              photos.fotoOdometerSerahTerima,
+              photos.fotoOdometerSerahTerima ||
+              photos.fotoOdometerSampai,
             fotoSuhuSerahTerima:
               item.assignmentSnapshot.handoverData.fotoSuhuSerahTerima ||
-              photos.fotoSuhuSerahTerima,
+              photos.fotoSuhuSerahTerima ||
+              photos.fotoSuhuSampai,
             fotoBuktiSerahTerima:
               item.assignmentSnapshot.handoverData.fotoBuktiSerahTerima ||
               photos.fotoBuktiSerahTerima,
@@ -3006,6 +3101,7 @@ export const TIER2_ALLOWED_DRIVER_FIELD_KEYS = [
   'status',
   'origin',
   'notes',
+  'deliveredAt',
   'depTimestamp',
   'depTitikBerangkat',
   'depJenisKendaraan',
@@ -3040,6 +3136,7 @@ const TIER2_NUMERIC_FIELD_SET = new Set<string>(['depKmAwal', 'hoKmAkhir']);
 const TIER2_STRING_MAX_LEN: Record<string, number> = {
   origin: MAX_LEN.ROUTE_DEST, // 200 (also requires size >= 1)
   notes: MAX_LEN.ASG_NOTES, // 500
+  deliveredAt: MAX_LEN.ASG_TIMESTAMP, // 64
   depTimestamp: MAX_LEN.ASG_TIMESTAMP, // 64
   depTitikBerangkat: MAX_LEN.ROUTE_DEST, // 200
   depJenisKendaraan: MAX_LEN.ASG_JENIS_KENDARAAN, // 32
@@ -3139,6 +3236,11 @@ export function buildDriverFormAndPhotoUrlFields(
 ): Record<string, string | number> {
   const includeDepartureFields =
     stage === 'KEBERANGKATAN' || Boolean(dataSuratTugasAsli.departureData);
+  const includeDeliveredMetrics =
+    stage === 'DELIVERED' ||
+    stage === 'SERAH_TERIMA' ||
+    Boolean(dataSuratTugasAsli.deliveredData) ||
+    Boolean(dataSuratTugasAsli.handoverData);
   const includeHandoverFields =
     stage === 'SERAH_TERIMA' || Boolean(dataSuratTugasAsli.handoverData);
 
@@ -3151,9 +3253,14 @@ export function buildDriverFormAndPhotoUrlFields(
     typeof dataSuratTugasAsli.handoverData?.kmAkhir === 'number' &&
     Number.isFinite(dataSuratTugasAsli.handoverData.kmAkhir)
       ? dataSuratTugasAsli.handoverData.kmAkhir
+      : typeof dataSuratTugasAsli.deliveredData?.kmSampai === 'number' &&
+        Number.isFinite(dataSuratTugasAsli.deliveredData.kmSampai)
+      ? dataSuratTugasAsli.deliveredData.kmSampai
       : -1;
 
-  const rawJenis = dataSuratTugasAsli.departureData?.jenisKendaraan;
+  const rawJenis =
+    dataSuratTugasAsli.departureData?.jenisKendaraan ||
+    dataSuratTugasAsli.deliveredData?.jenisKendaraan;
   const validJenisKendaraan =
     rawJenis === 'Mobil Pendingin' || rawJenis === 'Non Pendingin'
       ? rawJenis
@@ -3164,16 +3271,25 @@ export function buildDriverFormAndPhotoUrlFields(
     MAX_LEN.ROUTE_DEST,
     'Menunggu Titik Keberangkatan Driver'
   );
+  const resolvedDeliveredAt =
+    dataSuratTugasAsli.deliveredAt ||
+    dataSuratTugasAsli.deliveredData?.timestamp ||
+    '';
 
   const rawFields: Record<string, unknown> = {
     ...(stage === 'DELIVERED' ||
     Boolean(dataSuratTugasAsli.notes) ||
-    Boolean(dataSuratTugasAsli.deliveredAt)
+    Boolean(resolvedDeliveredAt)
       ? {
           notes: embedDeliveredAtInFirestoreNotes(
             dataSuratTugasAsli.notes,
-            dataSuratTugasAsli.deliveredAt
+            resolvedDeliveredAt || undefined
           ),
+        }
+      : {}),
+    ...(resolvedDeliveredAt
+      ? {
+          deliveredAt: clampString(resolvedDeliveredAt, MAX_LEN.ASG_TIMESTAMP),
         }
       : {}),
     ...(includeDepartureFields
@@ -3207,28 +3323,35 @@ export function buildDriverFormAndPhotoUrlFields(
           ),
         }
       : {}),
+    ...(includeDeliveredMetrics
+      ? {
+          hoKmAkhir: hoKm,
+          hoSuhuAkhir: clampString(
+            dataSuratTugasAsli.handoverData?.suhuAkhir ||
+              dataSuratTugasAsli.deliveredData?.suhuSampai,
+            MAX_LEN.ASG_SUHU
+          ),
+          hoBbmAkhir: clampString(
+            dataSuratTugasAsli.handoverData?.bbmAkhir ||
+              dataSuratTugasAsli.deliveredData?.bbmSampai,
+            MAX_LEN.ASG_BBM
+          ),
+          hoKondisi: clampString(
+            dataSuratTugasAsli.handoverData?.kondisiAkhir ||
+              dataSuratTugasAsli.deliveredData?.kondisiSampai,
+            MAX_LEN.ASG_KONDISI
+          ),
+        }
+      : {}),
     ...(includeHandoverFields
       ? {
           hoTimestamp: clampString(
             dataSuratTugasAsli.handoverData?.timestamp,
             MAX_LEN.ASG_TIMESTAMP
           ),
-          hoKmAkhir: hoKm,
-          hoSuhuAkhir: clampString(
-            dataSuratTugasAsli.handoverData?.suhuAkhir,
-            MAX_LEN.ASG_SUHU
-          ),
-          hoBbmAkhir: clampString(
-            dataSuratTugasAsli.handoverData?.bbmAkhir,
-            MAX_LEN.ASG_BBM
-          ),
           hoPenerima: clampString(
             dataSuratTugasAsli.handoverData?.penerimaNama,
             MAX_LEN.DRIVER_NAME
-          ),
-          hoKondisi: clampString(
-            dataSuratTugasAsli.handoverData?.kondisiAkhir,
-            MAX_LEN.ASG_KONDISI
           ),
           hoCatatan: clampString(
             dataSuratTugasAsli.handoverData?.catatanSerahTerima,
@@ -3354,13 +3477,29 @@ export interface SubmitDriverReportFirestoreResult {
  * - Forces `updatedAt: serverTimestamp()` from `firebase/firestore` to pass `incoming().updatedAt == request.time`.
  * - Enqueues into `localStorage('pending_report_sync')` inside `catch (error)` if offline or rejected.
  */
+export async function warmAuthTokenNonBlocking(timeoutMs = 1200): Promise<void> {
+  if (!auth.currentUser) return;
+  try {
+    await Promise.race([
+      auth.currentUser.getIdToken(false),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } catch {
+    // Proceed immediately with fallback identity
+  }
+}
+
 export async function submitDriverReportToFirestore(params: {
   assignment: Assignment;
   stage: DriverReportStage;
   serverSynced: boolean;
   departurePayload?: DriverDepartureSubmitPayload;
   deliveredCatatan?: string;
+  deliveredPayload?: DriverDeliveredSubmitPayload;
   handoverPayload?: DriverHandoverSubmitPayload;
+  skipQueueOnFailure?: boolean;
 }): Promise<SubmitDriverReportFirestoreResult> {
   const {
     assignment: dataSuratTugasAsli,
@@ -3368,7 +3507,9 @@ export async function submitDriverReportToFirestore(params: {
     serverSynced,
     departurePayload,
     deliveredCatatan,
+    deliveredPayload,
     handoverPayload,
+    skipQueueOnFailure = false,
   } = params;
 
   const assignmentId = sanitizeFirestoreId(
@@ -3401,9 +3542,9 @@ export async function submitDriverReportToFirestore(params: {
   let usedFallbackIdentity = false;
 
   try {
-    // Wake up dormant mobile Firebase Auth session before updateDoc
+    // Non-blocking warm check of cached Firebase Auth token (bounded at 1.2s so mobile cellular never hangs)
     if (auth.currentUser) {
-      await auth.currentUser.getIdToken(true);
+      await warmAuthTokenNonBlocking(1200);
     } else {
       usedFallbackIdentity = true;
     }
@@ -3414,47 +3555,63 @@ export async function submitDriverReportToFirestore(params: {
       stage
     );
 
-    if (auth.currentUser && canSyncWithUser(auth.currentUser)) {
-      let snap;
-      try {
-        snap = await getDoc(assignmentRef);
-      } catch {
-        snap = null;
-      }
-
-      if (snap && snap.exists()) {
-        const existingDoc = snap.data() as Record<string, unknown>;
-        const cloudDriverCode =
-          typeof existingDoc.driverCode === 'string' &&
-          existingDoc.driverCode.trim()
-            ? existingDoc.driverCode.trim()
-            : exactDriverCode;
-
-        const verifiedPayload: Record<string, unknown> = {
-          ...updatePayload,
-          submittedByDriverUid: clampString(
-            cloudDriverCode,
-            MAX_LEN.CODE_ID,
-            exactDriverCode
-          ),
-          updatedAt: serverTimestamp(),
-        };
-        delete verifiedPayload.ownerUid;
-
+    const writePromise = (async () => {
+      if (auth.currentUser && canSyncWithUser(auth.currentUser)) {
+        let snap;
         try {
-          await updateDoc(assignmentRef, verifiedPayload);
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, path);
+          snap = await getDoc(assignmentRef);
+        } catch {
+          snap = null;
         }
-      } else if (snap && !snap.exists()) {
-        // Document not yet created in Firestore and current user is verified owner -> create full doc
-        await upsertAssignmentInFirestore(auth.currentUser, {
-          ...dataSuratTugasAsli,
-          driverCode: exactDriverCode,
-          submittedByDriverUid: exactDriverCode,
-        });
+
+        if (snap && snap.exists()) {
+          const existingDoc = snap.data() as Record<string, unknown>;
+          const cloudDriverCode =
+            typeof existingDoc.driverCode === 'string' &&
+            existingDoc.driverCode.trim()
+              ? existingDoc.driverCode.trim()
+              : exactDriverCode;
+
+          const verifiedPayload: Record<string, unknown> = {
+            ...updatePayload,
+            submittedByDriverUid: clampString(
+              cloudDriverCode,
+              MAX_LEN.CODE_ID,
+              exactDriverCode
+            ),
+            updatedAt: serverTimestamp(),
+          };
+          delete verifiedPayload.ownerUid;
+
+          try {
+            await updateDoc(assignmentRef, verifiedPayload);
+          } catch (err) {
+            if (!serverSynced && !skipQueueOnFailure) {
+              handleFirestoreError(err, OperationType.UPDATE, path);
+            }
+            throw err;
+          }
+        } else if (snap && !snap.exists()) {
+          await upsertAssignmentInFirestore(auth.currentUser, {
+            ...dataSuratTugasAsli,
+            driverCode: exactDriverCode,
+            submittedByDriverUid: exactDriverCode,
+          });
+        } else {
+          try {
+            await updateDoc(assignmentRef, {
+              ...updatePayload,
+              submittedByDriverUid: exactDriverCode,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (err) {
+            if (!serverSynced && !skipQueueOnFailure) {
+              handleFirestoreError(err, OperationType.UPDATE, path);
+            }
+            throw err;
+          }
+        }
       } else {
-        // Signed in with non-owner Google account -> Tier 2 updateDoc preserving original ownerUid
         try {
           await updateDoc(assignmentRef, {
             ...updatePayload,
@@ -3462,25 +3619,24 @@ export async function submitDriverReportToFirestore(params: {
             updatedAt: serverTimestamp(),
           });
         } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, path);
+          if (!serverSynced && !skipQueueOnFailure) {
+            handleFirestoreError(err, OperationType.UPDATE, path);
+          }
+          throw err;
         }
       }
-    } else {
-      // Link Khusus Driver when session token is expired/null:
-      // Direct `updateDoc` keeping original `ownerUid` untouched, setting `submittedByDriverUid = dataSuratTugasAsli.driverCode`,
-      // and forcing `updatedAt: serverTimestamp()`
-      try {
-        await updateDoc(assignmentRef, {
-          ...updatePayload,
-          submittedByDriverUid: exactDriverCode,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, path);
-      }
-    }
+    })();
+
+    // Bound Firestore write wait to 6s so weak mobile signal falls back to offline queue instead of hanging UI
+    await Promise.race([
+      writePromise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Firestore timeout')), 6000);
+      }),
+    ]);
 
     removePendingReportSyncItem(`${dataSuratTugasAsli.id}__${stage}`);
+    clearPerAssignmentPendingSyncRecord(dataSuratTugasAsli.id);
 
     return {
       syncedToFirestore: true,
@@ -3489,6 +3645,27 @@ export async function submitDriverReportToFirestore(params: {
       usedFallbackIdentity,
     };
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errLower = errMsg.toLowerCase();
+    const isDocMissingOrRuleSkipped =
+      errLower.includes('no document to update') ||
+      errLower.includes('not-found') ||
+      errLower.includes('not_found') ||
+      errLower.includes('missing or insufficient permissions') ||
+      errLower.includes('permission-denied');
+
+    if (skipQueueOnFailure || (serverSynced && isDocMissingOrRuleSkipped)) {
+      removePendingReportSyncItem(`${dataSuratTugasAsli.id}__${stage}`);
+      clearPerAssignmentPendingSyncRecord(dataSuratTugasAsli.id);
+      return {
+        syncedToFirestore: false,
+        queuedLocally: false,
+        senderDriverUid: exactDriverCode,
+        usedFallbackIdentity: !auth.currentUser,
+        errorMessage: errMsg,
+      };
+    }
+
     enqueuePendingReportSync(
       {
         assignmentId: dataSuratTugasAsli.id,
@@ -3501,6 +3678,7 @@ export async function submitDriverReportToFirestore(params: {
         firestoreSynced: false,
         departurePayload,
         deliveredCatatan,
+        deliveredPayload,
         handoverPayload,
         assignmentSnapshot: {
           ...dataSuratTugasAsli,
@@ -3511,7 +3689,6 @@ export async function submitDriverReportToFirestore(params: {
       error
     );
 
-    const errMsg = error instanceof Error ? error.message : String(error);
     return {
       syncedToFirestore: false,
       queuedLocally: true,
@@ -3543,8 +3720,10 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
   candidateAssignment: Assignment;
   departurePayload?: DriverDepartureSubmitPayload;
   deliveredCatatan?: string;
+  deliveredPayload?: DriverDeliveredSubmitPayload;
   handoverPayload?: DriverHandoverSubmitPayload;
   serverSynced?: boolean;
+  skipQueueOnFailure?: boolean;
 }): Promise<OfflineRecoverySubmitResult> {
   const {
     assignmentId,
@@ -3553,8 +3732,10 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
     candidateAssignment,
     departurePayload,
     deliveredCatatan,
+    deliveredPayload,
     handoverPayload,
     serverSynced = false,
+    skipQueueOnFailure = false,
   } = params;
 
   // Read `dataSuratTugasAsli` (with guaranteed `driverCode`) from localStorage / IndexedDB cache
@@ -3590,15 +3771,8 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
   }
 
   try {
-    // Force Refresh Token right before `updateDoc` runs
     if (auth.currentUser) {
-      try {
-        await auth.currentUser.getIdToken(true);
-      } catch (e) {
-        console.log(
-          'Sesi Auth mati suri, melanjutkan pengiriman dengan mode fallback identitas lokal.'
-        );
-      }
+      await warmAuthTokenNonBlocking(1200);
     } else {
       getSavedDriverUidFallback(dataSuratTugasAsli.driverCode);
     }
@@ -3606,12 +3780,17 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
     const firestoreDocId = sanitizeAssignmentFirestoreId(assignmentId);
     const assignmentRef = doc(db, 'assignments', firestoreDocId);
 
-    await updateDoc(assignmentRef, {
-      status: validStatus,
-      submittedByDriverUid: dataSuratTugasAsli.driverCode,
-      ...driverFormAndPhotoUrlFields,
-      updatedAt: serverTimestamp(),
-    });
+    await Promise.race([
+      updateDoc(assignmentRef, {
+        status: validStatus,
+        submittedByDriverUid: dataSuratTugasAsli.driverCode,
+        ...driverFormAndPhotoUrlFields,
+        updatedAt: serverTimestamp(),
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Firestore timeout')), 6000);
+      }),
+    ]);
 
     // Clean up `'pending_report_sync_' + assignmentId` and queue item from phone localStorage on success
     removePendingReportSyncItem(`${assignmentId}__${stage}`);
@@ -3631,6 +3810,33 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
       resolvedAssignment: updatedCached,
     };
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errLower = errMsg.toLowerCase();
+    const isDocMissingOrRuleSkipped =
+      errLower.includes('no document to update') ||
+      errLower.includes('not-found') ||
+      errLower.includes('not_found') ||
+      errLower.includes('missing or insufficient permissions') ||
+      errLower.includes('permission-denied');
+
+    const optimisticCached = await cacheSuratTugasSnapshotLocally(
+      {
+        ...dataSuratTugasAsli,
+        status: validStatus,
+      },
+      fallbackDriverId || dataSuratTugasAsli.driverCode
+    );
+
+    if (skipQueueOnFailure || (serverSynced && isDocMissingOrRuleSkipped)) {
+      removePendingReportSyncItem(`${assignmentId}__${stage}`);
+      clearPerAssignmentPendingSyncRecord(assignmentId);
+      return {
+        syncedToFirestore: false,
+        queuedOffline: false,
+        resolvedAssignment: optimisticCached,
+      };
+    }
+
     const queuedItem = enqueuePendingReportSync(
       {
         assignmentId,
@@ -3643,6 +3849,7 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
         firestoreSynced: false,
         departurePayload,
         deliveredCatatan,
+        deliveredPayload,
         handoverPayload,
         assignmentSnapshot: {
           ...dataSuratTugasAsli,
@@ -3671,14 +3878,6 @@ export async function submitReportToFirestoreWithOfflineRecovery(params: {
         // Compact metadata is already saved by `enqueuePendingReportSync` and photos are in IndexedDB
       }
     }
-
-    const optimisticCached = await cacheSuratTugasSnapshotLocally(
-      {
-        ...dataSuratTugasAsli,
-        status: validStatus,
-      },
-      fallbackDriverId || dataSuratTugasAsli.driverCode
-    );
 
     return {
       syncedToFirestore: false,

@@ -66,6 +66,7 @@ import {
   deleteFleetCardFromFirestore,
   deleteRouteFromFirestore,
   deleteVehicleFromFirestore,
+  DriverDeliveredSubmitPayload,
   enqueuePendingReportSync,
   hydratePendingReportSyncItem,
   PENDING_REPORT_SYNC_ITEM_PREFIX,
@@ -85,6 +86,7 @@ import {
   upsertFleetCardInFirestore,
   upsertRouteInFirestore,
   upsertVehicleInFirestore,
+  warmAuthTokenNonBlocking,
 } from './services/firestoreSync';
 import {
   createNewDatabaseSpreadsheet,
@@ -93,6 +95,7 @@ import {
   pushAssignmentsToSpreadsheet,
   pushConfigToSpreadsheet,
   pushDriverExpensesToSpreadsheet,
+  pushDriverMutationViaBrowserBridge,
   pushDriversToSpreadsheet,
   pushFleetCardsToSpreadsheet,
   pushRoutesToSpreadsheet,
@@ -115,6 +118,7 @@ import {
   parseDriverUrlParams,
   refreshDriverLinkStatus,
   setCustomDriverPortalBaseUrl,
+  setEmbeddedSheetConfigSnapshot,
 } from './utils/driverLink';
 import {
   isHtmlOrMobileProxyError,
@@ -169,6 +173,13 @@ function saveWorkspaceBackupLocally(state: AppStateResponse): void {
             ...a.departureData,
             fotoOdometerBerangkat: undefined,
             fotoSuhuBerangkat: undefined,
+          }
+        : undefined,
+      deliveredData: a.deliveredData
+        ? {
+            ...a.deliveredData,
+            fotoOdometerSampai: undefined,
+            fotoSuhuSampai: undefined,
           }
         : undefined,
       handoverData: a.handoverData
@@ -453,6 +464,24 @@ export default function App() {
     appStateRef.current = appState;
   }, [appState]);
 
+  const getActiveConfigSnapshot = useCallback((): {
+    spreadsheetId?: string;
+    appsScriptUrl?: string;
+  } => {
+    const permanent = readPermanentSpreadsheetBindingSync();
+    const spreadsheetId =
+      appStateRef.current.config?.spreadsheetId ||
+      driverUrlParams.embeddedConfig?.spreadsheetId ||
+      permanent?.spreadsheetId ||
+      undefined;
+    const appsScriptUrl =
+      appStateRef.current.config?.appsScriptUrl ||
+      driverUrlParams.embeddedConfig?.appsScriptUrl ||
+      permanent?.appsScriptUrl ||
+      undefined;
+    return { spreadsheetId, appsScriptUrl };
+  }, [driverUrlParams.embeddedConfig]);
+
   const addToast = useCallback(
     (
       type: ToastMessage['type'],
@@ -665,6 +694,12 @@ export default function App() {
                       ...pendingSnap.departureData,
                     }
                   : incAsg.departureData,
+                deliveredData: pendingSnap.deliveredData
+                  ? {
+                      ...prevLocal?.deliveredData,
+                      ...pendingSnap.deliveredData,
+                    }
+                  : incAsg.deliveredData,
                 handoverData: pendingSnap.handoverData
                   ? {
                       ...prevLocal?.handoverData,
@@ -746,6 +781,10 @@ export default function App() {
       }
 
       setCustomDriverPortalBaseUrl(hydratedNextState.config?.publicPortalBaseUrl);
+      setEmbeddedSheetConfigSnapshot(
+        hydratedNextState.config?.spreadsheetId,
+        hydratedNextState.config?.appsScriptUrl
+      );
       appStateRef.current = hydratedNextState;
       setAppState(hydratedNextState);
       saveWorkspaceBackupLocally(hydratedNextState);
@@ -892,15 +931,23 @@ export default function App() {
 
         // 1. Self-heal server permanent Spreadsheet binding FIRST if container cold-started without spreadsheetId or appsScriptUrl
         const savedSheetBinding = await readPermanentSpreadsheetBindingAsync();
+        const candidateSheetId =
+          savedSheetBinding?.spreadsheetId ||
+          driverUrlParams.embeddedConfig?.spreadsheetId ||
+          '';
+        const candidateBridgeUrl =
+          savedSheetBinding?.appsScriptUrl ||
+          driverUrlParams.embeddedConfig?.appsScriptUrl ||
+          '';
         const serverMissingSheetId = !String(
           data.config?.spreadsheetId || ''
         ).trim();
         const serverMissingBridgeUrl =
-          Boolean(savedSheetBinding?.appsScriptUrl) &&
+          Boolean(candidateBridgeUrl) &&
           !String(data.config?.appsScriptUrl || '').trim();
 
         if (
-          savedSheetBinding?.spreadsheetId &&
+          candidateSheetId &&
           (serverMissingSheetId || serverMissingBridgeUrl)
         ) {
           const healSheetRes = await safeApiFetch<{
@@ -910,23 +957,23 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               spreadsheetId:
-                data.config?.spreadsheetId || savedSheetBinding.spreadsheetId,
+                data.config?.spreadsheetId || candidateSheetId,
               spreadsheetTitle:
                 data.config?.spreadsheetTitle ||
-                savedSheetBinding.spreadsheetTitle,
+                savedSheetBinding?.spreadsheetTitle,
               spreadsheetUrl:
-                data.config?.spreadsheetUrl || savedSheetBinding.spreadsheetUrl,
+                data.config?.spreadsheetUrl || savedSheetBinding?.spreadsheetUrl,
               appsScriptUrl:
-                data.config?.appsScriptUrl || savedSheetBinding.appsScriptUrl,
+                data.config?.appsScriptUrl || candidateBridgeUrl,
               driveRootFolderId:
                 data.config?.driveRootFolderId ||
-                savedSheetBinding.driveRootFolderId,
+                savedSheetBinding?.driveRootFolderId,
               driveRootFolderUrl:
                 data.config?.driveRootFolderUrl ||
-                savedSheetBinding.driveRootFolderUrl,
+                savedSheetBinding?.driveRootFolderUrl,
               lastSyncedAt:
                 data.config?.lastSyncedAt ||
-                savedSheetBinding.lastSyncedAt ||
+                savedSheetBinding?.lastSyncedAt ||
                 undefined,
               resetLocalCache: false,
             }),
@@ -939,24 +986,26 @@ export default function App() {
               config: {
                 ...data.config,
                 spreadsheetId:
-                  data.config?.spreadsheetId || savedSheetBinding.spreadsheetId,
+                  data.config?.spreadsheetId || candidateSheetId,
                 spreadsheetTitle:
                   data.config?.spreadsheetTitle ||
-                  savedSheetBinding.spreadsheetTitle,
+                  savedSheetBinding?.spreadsheetTitle ||
+                  '',
                 spreadsheetUrl:
                   data.config?.spreadsheetUrl ||
-                  savedSheetBinding.spreadsheetUrl,
+                  savedSheetBinding?.spreadsheetUrl ||
+                  '',
                 appsScriptUrl:
-                  data.config?.appsScriptUrl || savedSheetBinding.appsScriptUrl,
+                  data.config?.appsScriptUrl || candidateBridgeUrl,
                 driveRootFolderId:
                   data.config?.driveRootFolderId ||
-                  savedSheetBinding.driveRootFolderId,
+                  savedSheetBinding?.driveRootFolderId,
                 driveRootFolderUrl:
                   data.config?.driveRootFolderUrl ||
-                  savedSheetBinding.driveRootFolderUrl,
+                  savedSheetBinding?.driveRootFolderUrl,
                 lastSyncedAt:
                   data.config.lastSyncedAt ||
-                  savedSheetBinding.lastSyncedAt ||
+                  savedSheetBinding?.lastSyncedAt ||
                   null,
               },
             };
@@ -972,7 +1021,13 @@ export default function App() {
             state?: AppStateResponse;
           }>('/api/sheets/auto-sync', {
             method: 'POST',
-            headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Client-Id': REALTIME_CLIENT_ID,
+            },
+            body: JSON.stringify({
+              configSnapshot: getActiveConfigSnapshot(),
+            }),
           });
           if (autoSyncRes.ok && autoSyncRes.data?.state) {
             data = autoSyncRes.data.state;
@@ -1046,16 +1101,22 @@ export default function App() {
           }
         }
 
-        // 4. Ensure Driver's Surat Tugas & profile never vanish when opening Link Khusus Driver or after true cold start
+        // 4. Ensure unsynced Surat Tugas & Driver progress in client Vault/cache self-heal onto server
+        // (Server strictly rejects tombstoned deletions & items previously synced and deleted in Google Sheets)
         const activeDriverId =
           loggedInDriverRef.current?.id ||
           driverUrlParams.driverId ||
           readSavedPortalSession()?.driverId ||
           '';
-        const cachedDriverTasks =
-          isTrueBrandNewColdBoot && activeDriverId
-            ? await readDriverAssignmentsCacheAsync(activeDriverId)
-            : [];
+        const [vaultForRecovery, cachedDriverTasks] = await Promise.all([
+          !isTrueBrandNewColdBoot ? readFullWorkspaceFromVault() : Promise.resolve(null),
+          activeDriverId
+            ? readDriverAssignmentsCacheAsync(activeDriverId)
+            : Promise.resolve([]),
+        ]);
+        const localBackupForRecovery = !isTrueBrandNewColdBoot
+          ? vaultForRecovery || readWorkspaceBackupLocally()
+          : null;
         const embeddedTaskObj: Assignment | null = driverUrlParams.embeddedTask
           ? {
               ...driverUrlParams.embeddedTask,
@@ -1065,17 +1126,59 @@ export default function App() {
             }
           : null;
 
-        const existingAsgIds = new Set(data.assignments.map((a) => a.id));
+        const serverById = new Map(data.assignments.map((a) => [a.id, a]));
+        const serverByNo = new Map(
+          data.assignments.map((a) => [a.noPenugasan.trim().toLowerCase(), a])
+        );
+        const queuedRecoveryKeys = new Set<string>();
         const missingDriverSnapshots: Assignment[] = [];
-        if (embeddedTaskObj && !existingAsgIds.has(embeddedTaskObj.id)) {
-          missingDriverSnapshots.push(embeddedTaskObj);
-          existingAsgIds.add(embeddedTaskObj.id);
+
+        const maybeQueueSnapshot = (cand?: Assignment | null) => {
+          if (!cand || !cand.id || !cand.noPenugasan) return;
+          const normNo = cand.noPenugasan.trim().toLowerCase();
+          if (queuedRecoveryKeys.has(cand.id) || queuedRecoveryKeys.has(normNo)) {
+            return;
+          }
+          const serverMatch =
+            serverById.get(cand.id) || serverByNo.get(normNo);
+          if (!serverMatch) {
+            missingDriverSnapshots.push(cand);
+            queuedRecoveryKeys.add(cand.id);
+            queuedRecoveryKeys.add(normNo);
+            return;
+          }
+          const rank = (s?: string) =>
+            s === 'Handover' || s === 'Selesai'
+              ? 3
+              : s === 'Delivered'
+              ? 2
+              : s === 'Dalam Perjalanan'
+              ? 1
+              : 0;
+          if (
+            rank(cand.status) > rank(serverMatch.status) ||
+            (Boolean(cand.departureData?.timestamp) &&
+              !serverMatch.departureData?.timestamp) ||
+            (Boolean(cand.deliveredData?.timestamp) &&
+              !serverMatch.deliveredData?.timestamp) ||
+            (Boolean(cand.handoverData?.timestamp) &&
+              !serverMatch.handoverData?.timestamp)
+          ) {
+            missingDriverSnapshots.push(cand);
+            queuedRecoveryKeys.add(cand.id);
+            queuedRecoveryKeys.add(normNo);
+          }
+        };
+
+        maybeQueueSnapshot(embeddedTaskObj);
+        for (const inMemTask of appStateRef.current.assignments) {
+          maybeQueueSnapshot(inMemTask);
         }
         for (const cachedTask of cachedDriverTasks) {
-          if (cachedTask?.id && !existingAsgIds.has(cachedTask.id)) {
-            missingDriverSnapshots.push(cachedTask);
-            existingAsgIds.add(cachedTask.id);
-          }
+          maybeQueueSnapshot(cachedTask);
+        }
+        for (const vaultTask of localBackupForRecovery?.assignments || []) {
+          maybeQueueSnapshot(vaultTask);
         }
 
         const candidateDriverSnap =
@@ -1110,9 +1213,11 @@ export default function App() {
               body: JSON.stringify({
                 driverSnapshot: candidateDriverSnap,
                 assignmentSnapshots: missingDriverSnapshots,
+                recoverUnsynced: true,
                 fromUrlLink: Boolean(
                   driverUrlParams.embeddedDriver || driverUrlParams.embeddedTask
                 ),
+                configSnapshot: getActiveConfigSnapshot(),
               }),
             }
           );
@@ -1128,7 +1233,7 @@ export default function App() {
       } finally {
         setLoadingInitial(false);
       }
-    }, [applyIncomingState, driverUrlParams, runCloudTask]);
+    }, [applyIncomingState, driverUrlParams, getActiveConfigSnapshot, runCloudTask]);
 
   const handleSyncPhotosToDrive = useCallback(
     async (options?: {
@@ -1468,8 +1573,7 @@ export default function App() {
             if (googleUser?.emailVerified) {
               const customPin = getSavedCustomPin() || undefined;
               const shouldPrune = Boolean(
-                autoSyncRes.data.hasSheetDeletionsToPrune ||
-                  autoSyncRes.data.success
+                autoSyncRes.data.hasSheetDeletionsToPrune
               );
               void runCloudTask(() =>
                 reconcileFullStateToFirestore(
@@ -1763,9 +1867,13 @@ export default function App() {
               }
             }
 
+            const appsScriptUrlOutOfSync =
+              String(nextState.config.appsScriptUrl || '').trim() !==
+              String(pulled.appsScriptUrl || '').trim();
             if (
-              (reconciled.hasCustomPinToPush || hasNewDriveLinksToPush) &&
-              (reconciled.adminPin || getSavedCustomPin())
+              reconciled.hasCustomPinToPush ||
+              hasNewDriveLinksToPush ||
+              appsScriptUrlOutOfSync
             ) {
               await pushConfigToSpreadsheet(activeToken, targetSheetId, {
                 adminPin:
@@ -1809,8 +1917,55 @@ export default function App() {
               );
             }
 
-            // ONLY push Surat_Tugas & Pengeluaran_Driver back to Google Sheets when there are genuine unpushed App/Drive changes
-            if (reconciled.hasPendingDriverUpdates || hasNewDriveLinksToPush) {
+            // Push Surat_Tugas & Pengeluaran_Driver whenever App has unpushed updates OR Spreadsheet rows differ from reconciled canonical state
+            const pulledAsgByNo = new Map(
+              pulled.assignments.map((a) => [
+                a.noPenugasan.trim().toLowerCase(),
+                a,
+              ])
+            );
+            const sheetAssignmentsMismatch =
+              pulled.assignments.length !== nextState.assignments.length ||
+              nextState.assignments.some((asg) => {
+                if (asg.needsSheetSync) return true;
+                const inSheet = pulledAsgByNo.get(
+                  asg.noPenugasan.trim().toLowerCase()
+                );
+                if (!inSheet) return true;
+                return (
+                  inSheet.status !== asg.status ||
+                  (inSheet.origin || '') !== (asg.origin || '') ||
+                  (inSheet.kodeSegel || '') !== (asg.kodeSegel || '') ||
+                  (inSheet.noSuratJalanFisik || '') !==
+                    (asg.noSuratJalanFisik || '') ||
+                  Boolean(asg.departureData?.timestamp) !==
+                    Boolean(inSheet.departureData?.timestamp) ||
+                  Boolean(asg.handoverData?.timestamp) !==
+                    Boolean(inSheet.handoverData?.timestamp)
+                );
+              });
+
+            const pulledExpById = new Set(
+              (pulled.driverExpenses || []).map((e) =>
+                e.id.trim().toLowerCase()
+              )
+            );
+            const sheetExpensesMismatch =
+              (pulled.driverExpenses || []).length !==
+                (nextState.driverExpenses || []).length ||
+              (nextState.driverExpenses || []).some(
+                (e) =>
+                  Boolean(e.needsSheetSync) ||
+                  !pulledExpById.has(e.id.trim().toLowerCase())
+              );
+
+            const shouldPushOperationalTabs =
+              reconciled.hasPendingDriverUpdates ||
+              hasNewDriveLinksToPush ||
+              sheetAssignmentsMismatch ||
+              sheetExpensesMismatch;
+
+            if (shouldPushOperationalTabs) {
               await pushAssignmentsToSpreadsheet(
                 activeToken,
                 targetSheetId,
@@ -1829,7 +1984,10 @@ export default function App() {
                 nextState.fleetCards,
                 true
               );
-              if (reconciled.hasPendingDriverUpdates) {
+              if (
+                reconciled.hasPendingDriverUpdates ||
+                sheetAssignmentsMismatch
+              ) {
                 await pushVehiclesToSpreadsheet(
                   activeToken,
                   targetSheetId,
@@ -1841,8 +1999,7 @@ export default function App() {
 
             if (
               reconciled.hasPendingMasterUpdates ||
-              reconciled.hasPendingDriverUpdates ||
-              hasNewDriveLinksToPush
+              shouldPushOperationalTabs
             ) {
               const markRes = await safeApiFetch<{ state?: AppStateResponse }>(
                 '/api/sync/mark-pushed',
@@ -1954,6 +2111,9 @@ export default function App() {
       runCloudTask,
     ]
   );
+
+  const syncWithGoogleSheetsRef = useRef(syncWithGoogleSheets);
+  syncWithGoogleSheetsRef.current = syncWithGoogleSheets;
 
   // Real-Time WebSocket Subscription (/ws) for sub-second sync across Admin & Driver
   useEffect(() => {
@@ -2159,21 +2319,10 @@ export default function App() {
     });
 
     void (async () => {
-      const pendingCloudPurge =
-        typeof window !== 'undefined' &&
-        window.localStorage.getItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY) === '1';
-      if (CLEAN_START_PURGED_ON_BOOT || pendingCloudPurge) {
-        await safeApiFetch(
-          '/api/system/reset',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Client-Id': REALTIME_CLIENT_ID,
-            },
-          },
-          0
-        );
+      try {
+        window.localStorage.removeItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY);
+      } catch {
+        // Ignore storage restrictions
       }
       await fetchServerState();
     })();
@@ -2246,37 +2395,11 @@ export default function App() {
 
     const bootstrapAndListen = async () => {
       try {
-        if (
-          typeof window !== 'undefined' &&
-          window.localStorage.getItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY) ===
-            '1'
-        ) {
+        if (typeof window !== 'undefined') {
           try {
-            await deleteAllAssignmentsFromFirestore(googleUser);
-            const resetRes = await safeApiFetch<{ state?: AppStateResponse }>(
-              '/api/system/reset',
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-Client-Id': REALTIME_CLIENT_ID,
-                },
-              }
-            );
-            if (resetRes.data?.state) {
-              const customPin = getSavedCustomPin() || undefined;
-              await upsertConfigInFirestore(
-                googleUser,
-                { ...resetRes.data.state.config, lastSequence: 0 },
-                customPin
-              );
-              for (const veh of resetRes.data.state.vehicles) {
-                await upsertVehicleInFirestore(googleUser, veh);
-              }
-            }
             window.localStorage.removeItem(PENDING_CLOUD_ASSIGNMENT_PURGE_KEY);
           } catch {
-            // Keep flag if Firestore purge failed so next online boot retries
+            // Ignore
           }
         }
 
@@ -2360,6 +2483,18 @@ export default function App() {
                   )
                 );
               }
+              if (
+                hydrateJson.state.config.spreadsheetId &&
+                (hydrateJson.state.assignments.some((a) => a.needsSheetSync) ||
+                  (hydrateJson.state.driverExpenses || []).some(
+                    (e) => e.needsSheetSync
+                  ))
+              ) {
+                void syncWithGoogleSheetsRef.current(
+                  hydrateJson.state.config.spreadsheetId,
+                  true
+                );
+              }
             }
           } else if (!cancelled) {
             // Hydrate UI directly from Firestore when /api/* returns HTML on mobile
@@ -2436,6 +2571,20 @@ export default function App() {
                           shouldPruneLiveCloud,
                           effectivePin
                         )
+                      );
+                    }
+                    if (
+                      syncJson.state.config.spreadsheetId &&
+                      (syncJson.state.assignments.some(
+                        (a) => a.needsSheetSync
+                      ) ||
+                        (syncJson.state.driverExpenses || []).some(
+                          (e) => e.needsSheetSync
+                        ))
+                    ) {
+                      void syncWithGoogleSheetsRef.current(
+                        syncJson.state.config.spreadsheetId,
+                        true
                       );
                     }
                   }
@@ -3155,43 +3304,54 @@ export default function App() {
         return null;
       }
       const data = res.data;
-
       const notif = data.notification;
+
+      applyIncomingState(data.state);
+
+      let targetUrl = '';
       if (notif && data.assignment) {
-        const { url: targetUrl } = buildRealtimeWhatsAppUrlForAssignment(
+        const built = buildRealtimeWhatsAppUrlForAssignment(
           data.assignment,
           waTargetMode,
           data.state?.config?.whatsappGroupName,
           data.state?.config?.dispatcherWaPhone,
           notif.eventType
         );
-        // Open WhatsApp immediately in 1 click with live real-time clock
+        targetUrl = built.url;
         launchWhatsAppUrl(targetUrl);
       }
 
-      applyIncomingState(data.state);
       addToast(
         'success',
-        'Surat Tugas Diterbitkan & Membuka WhatsApp',
-        `Nomor ${data.assignment.noPenugasan} berhasil dibuat secara real-time.`
+        'Surat Tugas Diterbitkan & Tersimpan Permanen',
+        `Nomor ${data.assignment.noPenugasan} berhasil disimpan ke Cloud & Spreadsheet.`,
+        targetUrl
+          ? { actionLabel: 'Buka WhatsApp', actionHref: targetUrl }
+          : undefined
       );
 
-      if (googleUser?.emailVerified) {
-        const customPin = getSavedCustomPin() || undefined;
-        void runCloudTask(async () => {
-          await upsertAssignmentInFirestore(googleUser, data.assignment);
-          await upsertConfigInFirestore(
-            googleUser,
-            data.state.config,
-            customPin
-          );
-          for (const veh of data.state.vehicles) {
-            await upsertVehicleInFirestore(googleUser, veh);
+      void (async () => {
+        try {
+          if (googleUser?.emailVerified) {
+            const customPin = getSavedCustomPin() || undefined;
+            await runCloudTask(async () => {
+              await upsertAssignmentInFirestore(googleUser, data.assignment);
+              await upsertConfigInFirestore(
+                googleUser,
+                data.state.config,
+                customPin
+              );
+              for (const veh of data.state.vehicles) {
+                await upsertVehicleInFirestore(googleUser, veh);
+              }
+            });
           }
-        });
-      }
+          await pushToSheetsIfActive('assignments', data.state);
+        } catch {
+          // Handled via server bridge / next background sync
+        }
+      })();
 
-      await pushToSheetsIfActive('assignments', data.state);
       return notif;
     } catch {
       addToast('error', 'Kesalahan Jaringan', 'Gagal menyimpan Surat Tugas.');
@@ -3848,26 +4008,42 @@ export default function App() {
       return { createdExpense, latestState };
     };
 
+    const matchedFleetCardSnapshot = (appStateRef.current.fleetCards || []).find(
+      (fc) =>
+        (payload.fleetCardId &&
+          fc.id.toLowerCase() === payload.fleetCardId.toLowerCase()) ||
+        fc.cardNumber.trim().toLowerCase() ===
+          payload.fleetCardNumber.trim().toLowerCase()
+    );
+    const activeConfigSnap = getActiveConfigSnapshot();
+
     try {
       const res = await safeApiFetch<{
         error?: string;
         expense?: DriverExpense;
         state?: AppStateResponse;
-      }>('/api/driver-expenses', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': REALTIME_CLIENT_ID,
+      }>(
+        '/api/driver-expenses',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Id': REALTIME_CLIENT_ID,
+          },
+          body: JSON.stringify({
+            ...payload,
+            id: clientExpenseId,
+            timestamp: nowIso,
+            driverId: activeDriver.id,
+            driverName: activeDriver.name,
+            submittedByDriverUid: driverUid,
+            fleetCardSnapshot: matchedFleetCardSnapshot,
+            configSnapshot: activeConfigSnap,
+          }),
         },
-        body: JSON.stringify({
-          ...payload,
-          id: clientExpenseId,
-          timestamp: nowIso,
-          driverId: activeDriver.id,
-          driverName: activeDriver.name,
-          submittedByDriverUid: driverUid,
-        }),
-      });
+        1,
+        10000
+      );
 
       let latestState: AppStateResponse;
       let createdExpense: DriverExpense;
@@ -3900,12 +4076,19 @@ export default function App() {
         );
         return false;
       } else {
-        // Resilient local fallback if server is hibernating (Admin exited AI Studio) or mobile network drops
+        // Resilient fallback if server is hibernating or mobile network returned proxy HTML
         const built = buildOptimisticExpenseState();
         createdExpense = built.createdExpense;
         latestState = built.latestState;
-        enqueuePendingDriverExpense(createdExpense);
-        queuedForWakeup = true;
+        const bridgedOk = await pushDriverMutationViaBrowserBridge({
+          appsScriptUrl: activeConfigSnap.appsScriptUrl,
+          spreadsheetId: activeConfigSnap.spreadsheetId,
+          createdExpense,
+        });
+        if (!bridgedOk) {
+          enqueuePendingDriverExpense(createdExpense);
+          queuedForWakeup = true;
+        }
       }
 
       applyIncomingState(latestState);
@@ -3928,20 +4111,13 @@ export default function App() {
         });
       }
 
-      if (!queuedForWakeup) {
-        if (getAccessToken()) {
-          void handleSyncPhotosToDrive({
-            silent: true,
-            explicitSpreadsheetId: latestState.config.spreadsheetId,
-          });
-          void pushToSheetsIfActive('driverExpenses', latestState, false);
-          void pushToSheetsIfActive('fleetCards', latestState, false);
-        } else if (latestState.config.appsScriptUrl) {
-          void safeApiFetch('/api/sheets/auto-sync', {
-            method: 'POST',
-            headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
-          });
-        }
+      if (!queuedForWakeup && getAccessToken()) {
+        void handleSyncPhotosToDrive({
+          silent: true,
+          explicitSpreadsheetId: latestState.config.spreadsheetId,
+        });
+        void pushToSheetsIfActive('driverExpenses', latestState, false);
+        void pushToSheetsIfActive('fleetCards', latestState, false);
       }
 
       addToast(
@@ -3956,12 +4132,23 @@ export default function App() {
       return true;
     } catch {
       const built = buildOptimisticExpenseState();
-      enqueuePendingDriverExpense(built.createdExpense);
+      const bridgedOk = await pushDriverMutationViaBrowserBridge({
+        appsScriptUrl: activeConfigSnap.appsScriptUrl,
+        spreadsheetId: activeConfigSnap.spreadsheetId,
+        createdExpense: built.createdExpense,
+      });
+      if (!bridgedOk) {
+        enqueuePendingDriverExpense(built.createdExpense);
+      }
       applyIncomingState(built.latestState);
       addToast(
-        'info',
-        'Laporan Pengeluaran Aman Tersimpan di HP',
-        `Koneksi terganggu. Pengeluaran kartu ${built.createdExpense.fleetCardNumber} tersimpan di HP dan otomatis dikirim saat server aktif.`
+        bridgedOk ? 'success' : 'info',
+        bridgedOk
+          ? 'Laporan Pengeluaran Berhasil Disimpan'
+          : 'Laporan Pengeluaran Aman Tersimpan di HP',
+        bridgedOk
+          ? `Pengeluaran kartu ${built.createdExpense.fleetCardNumber} berhasil tersimpan langsung ke Database Spreadsheet.`
+          : `Koneksi terganggu. Pengeluaran kartu ${built.createdExpense.fleetCardNumber} tersimpan di HP dan otomatis dikirim saat server aktif.`
       );
       return true;
     }
@@ -4185,14 +4372,23 @@ export default function App() {
         }
       }
 
+      const bridgeStatus = latestState.config.appsScriptBridgeStatus;
       addToast(
-        'success',
-        cleanUrl
+        !cleanUrl || bridgeStatus === 'ACTIVE' ? 'success' : 'info',
+        !cleanUrl
+          ? 'Bridge Apps Script Dinonaktifkan'
+          : bridgeStatus === 'ACTIVE'
           ? 'Sinkronisasi Permanen 24/7 Aktif'
-          : 'Bridge Apps Script Dinonaktifkan',
-        cleanUrl
+          : bridgeStatus === 'NEEDS_SCRIPT_UPDATE'
+          ? 'URL Tersimpan · Perbarui Isi Kode.gs'
+          : 'URL Tersimpan · Periksa Izin Akses Deployment',
+        !cleanUrl
+          ? 'URL Google Apps Script telah dihapus dari konfigurasi.'
+          : bridgeStatus === 'ACTIVE'
           ? 'Aplikasi dan Google Spreadsheet kini tersinkronisasi dua arah otomatis secara permanen tanpa perlu sinkron ulang.'
-          : 'URL Google Apps Script telah dihapus dari konfigurasi.'
+          : bridgeStatus === 'NEEDS_SCRIPT_UPDATE'
+          ? 'Izin Siapa saja sudah aktif, namun Kode.gs masih versi lama. Salin Kode Apps Script terbaru lalu Deploy -> Kelola deployment -> Edit -> Versi baru.'
+          : 'URL tersimpan. Pastikan izin Who has access disetel ke Siapa saja (Anyone).'
       );
       return true;
     } catch {
@@ -4333,32 +4529,35 @@ export default function App() {
     );
 
     try {
-      // 1. Wake up dormant mobile Firebase Auth session before report submission
+      // 1. Bounded non-blocking token warmup (never stalls mobile report submission)
       if (!syncMeta?.firestoreAlreadySynced && auth.currentUser) {
-        try {
-          await auth.currentUser.getIdToken(true);
-        } catch {
-          // Handled downstream via Fallback Identity / Pending Sync Queue
-        }
+        await warmAuthTokenNonBlocking(700);
       }
 
+      const activeConfigSnap = getActiveConfigSnapshot();
       const res = await safeApiFetch<{
         error?: string;
         assignment: Assignment;
         notification: WhatsAppNotificationLog;
         state: AppStateResponse;
-      }>(`/api/assignments/${encodeURIComponent(assignmentId)}/departure`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': REALTIME_CLIENT_ID,
+      }>(
+        `/api/assignments/${encodeURIComponent(assignmentId)}/departure`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Id': REALTIME_CLIENT_ID,
+          },
+          body: JSON.stringify({
+            ...payload,
+            submittedByDriverUid: fallbackDriverUid,
+            assignmentSnapshot,
+            configSnapshot: activeConfigSnap,
+          }),
         },
-        body: JSON.stringify({
-          ...payload,
-          submittedByDriverUid: fallbackDriverUid,
-          assignmentSnapshot,
-        }),
-      });
+        0,
+        6000
+      );
       if (!res.ok || !res.data?.state) {
         if (
           res.isHtmlResponse ||
@@ -4378,6 +4577,8 @@ export default function App() {
         return null;
       }
       const data = res.data;
+      removePendingReportSyncItem(`${assignmentId}__KEBERANGKATAN`);
+      clearPerAssignmentPendingSyncRecord(assignmentId);
 
       const notif = data.notification as WhatsAppNotificationLog;
       let targetUrl = '';
@@ -4411,7 +4612,7 @@ export default function App() {
         assignmentSnapshot?.driverId ||
         fallbackDriverUid;
 
-      // Sync to Firestore if not already written directly by DriverPortal
+      // Sync to Firestore in background without blocking UI
       if (data.assignment) {
         if (syncMeta?.firestoreAlreadySynced) {
           if (googleUser?.emailVerified) {
@@ -4422,7 +4623,7 @@ export default function App() {
             });
           }
         } else {
-          const fsSync = await submitDriverReportToFirestore({
+          void submitDriverReportToFirestore({
             assignment: {
               ...data.assignment,
               driverCode:
@@ -4433,74 +4634,77 @@ export default function App() {
             },
             stage: 'KEBERANGKATAN',
             serverSynced: true,
+            skipQueueOnFailure: true,
             departurePayload: payload,
+          }).then((fsSync) => {
+            if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
+              void runCloudTask(async () => {
+                for (const veh of (data.state as AppStateResponse).vehicles) {
+                  await upsertVehicleInFirestore(googleUser, veh);
+                }
+              });
+            }
           });
-
-          if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
-            void runCloudTask(async () => {
-              for (const veh of (data.state as AppStateResponse).vehicles) {
-                await upsertVehicleInFirestore(googleUser, veh);
-              }
-            });
-          } else if (fsSync.queuedLocally && !syncMeta?.firestoreQueuedInPortal) {
-            addToast(
-              'info',
-              'Laporan Aman Tersimpan di Memori HP',
-              'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
-            );
-          }
         }
       }
 
       addToast(
         'success',
         autoOpenWa
-          ? 'Keberangkatan Tersimpan & WhatsApp Otomatis Dibuka'
+          ? 'Keberangkatan Tersimpan — Siap Kirim WhatsApp'
           : 'Data Keberangkatan Tersimpan Real-Time',
         waTargetMode === 'GROUP'
           ? 'Notifikasi keberangkatan real-time siap dikirim ke Grup WhatsApp.'
           : waTargetMode === 'DRIVER'
-          ? 'Membuka notifikasi WhatsApp real-time ke nomor Driver.'
-          : 'Membuka notifikasi WhatsApp real-time ke Dispatcher.',
+          ? 'Notifikasi WhatsApp real-time siap dikirim ke nomor Driver.'
+          : 'Notifikasi WhatsApp real-time siap dikirim ke Dispatcher.',
         targetUrl
           ? { actionLabel: 'Buka WhatsApp', actionHref: targetUrl }
           : undefined
       );
 
-      const token =
-        googleUser || getAccessToken() ? await ensureValidAccessToken() : null;
-      const sheetId = data.state.config.spreadsheetId;
-      if (token) {
-        const pendingPhotos = summarizeFleetPhotoDriveStats(
-          data.state.assignments
-        ).pendingPhotos;
-        if (pendingPhotos > 0) {
-          void handleSyncPhotosToDrive({
-            silent: true,
-            explicitAssignments: data.state.assignments,
-            explicitSpreadsheetId: sheetId,
-          });
-        } else if (sheetId) {
-          try {
-            await pushAssignmentsToSpreadsheet(
-              token,
-              sheetId,
+      void (async () => {
+        try {
+          const token =
+            googleUser || getAccessToken()
+              ? await ensureValidAccessToken()
+              : null;
+          const sheetId = data.state.config.spreadsheetId;
+          if (token) {
+            const pendingPhotos = summarizeFleetPhotoDriveStats(
               data.state.assignments
-            );
-            await pushVehiclesToSpreadsheet(token, sheetId, data.state.vehicles);
-            await fetch('/api/sync/mark-pushed', {
-              method: 'POST',
-              headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
-            });
-          } catch {
-            // Will be pushed on next sync
+            ).pendingPhotos;
+            if (pendingPhotos > 0) {
+              void handleSyncPhotosToDrive({
+                silent: true,
+                explicitAssignments: data.state.assignments,
+                explicitSpreadsheetId: sheetId,
+              });
+            } else if (sheetId) {
+              await pushAssignmentsToSpreadsheet(
+                token,
+                sheetId,
+                data.state.assignments
+              );
+              await pushVehiclesToSpreadsheet(
+                token,
+                sheetId,
+                data.state.vehicles
+              );
+              await fetch('/api/sync/mark-pushed', {
+                method: 'POST',
+                headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
+              });
+            }
           }
+        } catch {
+          // Will be pushed via server bridge / next background sync
         }
-      }
+      })();
 
       return notif ? { ...notif, message: freshMessage } : null;
     } catch (error) {
-      // Pending Sync Queue fallback when network/session fails completely on Driver phone
+      // Browser-direct Apps Script fallback + Pending Sync Queue when server/network fails on Driver phone
       if (assignmentSnapshot) {
         const nowIso = new Date().toISOString();
         const optimisticAssignment: Assignment = {
@@ -4526,6 +4730,8 @@ export default function App() {
           optimisticAssignment.driverCode ||
           optimisticAssignment.driverId ||
           fallbackDriverUid;
+
+        // Immediately queue locally & update UI + open WhatsApp without blocking on slow mobile bridge
         enqueuePendingReportSync(
           {
             assignmentId,
@@ -4575,15 +4781,35 @@ export default function App() {
           launchWhatsAppUrl(built.url);
         }
 
+        const activeConfigSnap = getActiveConfigSnapshot();
+        void pushDriverMutationViaBrowserBridge({
+          appsScriptUrl: activeConfigSnap.appsScriptUrl,
+          spreadsheetId: activeConfigSnap.spreadsheetId,
+          updatedAssignment: optimisticAssignment,
+          updatedVehicleStatus: {
+            vehicleId: optimisticAssignment.vehicleId,
+            plateNumber: optimisticAssignment.plateNumber,
+            status: 'Dalam Tugas',
+          },
+        }).then((bridgedOk) => {
+          if (bridgedOk) {
+            removePendingReportSyncItem(`${assignmentId}__KEBERANGKATAN`);
+            clearPerAssignmentPendingSyncRecord(assignmentId);
+          }
+        });
+
         if (!syncMeta?.firestoreQueuedInPortal) {
           addToast(
             syncMeta?.firestoreAlreadySynced ? 'success' : 'info',
             syncMeta?.firestoreAlreadySynced
               ? 'Laporan Masuk ke Database Cloud'
-              : 'Laporan Aman Tersimpan di Memori HP',
+              : 'Laporan Aman Tersimpan — Siap Kirim WhatsApp',
             syncMeta?.firestoreAlreadySynced
               ? 'Data keberangkatan telah tersimpan langsung di Firestore Database.'
-              : 'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
+              : 'Laporan disimpan di memori HP & otomatis disinkronkan ke Spreadsheet di latar belakang.',
+            built.url
+              ? { actionLabel: 'Buka WhatsApp', actionHref: built.url }
+              : undefined
           );
         }
 
@@ -4615,7 +4841,7 @@ export default function App() {
 
   const handleDriverDelivered = async (
     assignmentId: string,
-    catatanTiba: string,
+    deliveredInput: DriverDeliveredSubmitPayload | string,
     waTargetMode: WhatsAppTargetMode,
     autoOpenWa = true,
     explicitSnapshot?: Assignment,
@@ -4631,32 +4857,70 @@ export default function App() {
         assignmentSnapshot?.driverId
     );
 
+    const effectiveCooling: VehicleCoolingType =
+      (typeof deliveredInput === 'object' && deliveredInput?.jenisKendaraan) ||
+      assignmentSnapshot?.departureData?.jenisKendaraan ||
+      'Mobil Pendingin';
+    const isPendingin = effectiveCooling !== 'Non Pendingin';
+    const deliveredPayload: DriverDeliveredSubmitPayload =
+      typeof deliveredInput === 'string'
+        ? {
+            jenisKendaraan: effectiveCooling,
+            kmSampai:
+              assignmentSnapshot?.deliveredData?.kmSampai ??
+              assignmentSnapshot?.departureData?.kmAwal ??
+              0,
+            suhuSampai: isPendingin
+              ? assignmentSnapshot?.deliveredData?.suhuSampai ||
+                assignmentSnapshot?.departureData?.suhuAwal ||
+                ''
+              : '',
+            bbmSampai:
+              assignmentSnapshot?.deliveredData?.bbmSampai || '1/2 Tangki',
+            kondisiSampai:
+              assignmentSnapshot?.deliveredData?.kondisiSampai ||
+              (isPendingin
+                ? 'Suhu & Segel Utuh - Lengkap'
+                : 'Segel & Muatan Utuh - Lengkap'),
+            catatanSampai: deliveredInput,
+            fotoOdometerSampai:
+              assignmentSnapshot?.deliveredData?.fotoOdometerSampai,
+            fotoSuhuSampai: isPendingin
+              ? assignmentSnapshot?.deliveredData?.fotoSuhuSampai
+              : undefined,
+          }
+        : deliveredInput;
+
     try {
       if (!syncMeta?.firestoreAlreadySynced && auth.currentUser) {
-        try {
-          await auth.currentUser.getIdToken(true);
-        } catch {
-          // Handled downstream via Fallback Identity / Pending Sync Queue
-        }
+        await warmAuthTokenNonBlocking(700);
       }
 
+      const activeConfigSnap = getActiveConfigSnapshot();
       const res = await safeApiFetch<{
         error?: string;
         assignment: Assignment;
         notification: WhatsAppNotificationLog;
         state: AppStateResponse;
-      }>(`/api/assignments/${encodeURIComponent(assignmentId)}/delivered`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': REALTIME_CLIENT_ID,
+      }>(
+        `/api/assignments/${encodeURIComponent(assignmentId)}/delivered`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Id': REALTIME_CLIENT_ID,
+          },
+          body: JSON.stringify({
+            ...deliveredPayload,
+            catatanTiba: deliveredPayload.catatanSampai,
+            submittedByDriverUid: fallbackDriverUid,
+            assignmentSnapshot,
+            configSnapshot: activeConfigSnap,
+          }),
         },
-        body: JSON.stringify({
-          catatanTiba,
-          submittedByDriverUid: fallbackDriverUid,
-          assignmentSnapshot,
-        }),
-      });
+        0,
+        6000
+      );
       if (!res.ok || !res.data?.state) {
         if (
           res.isHtmlResponse ||
@@ -4670,12 +4934,14 @@ export default function App() {
         }
         addToast(
           'error',
-          'Gagal Konfirmasi Tiba (Delivered)',
-          res.errorMessage || 'Gagal konfirmasi tiba.'
+          'Gagal Menyimpan Data Delivered (Sampai)',
+          res.errorMessage || 'Gagal menyimpan data Delivered.'
         );
         return null;
       }
       const data = res.data;
+      removePendingReportSyncItem(`${assignmentId}__DELIVERED`);
+      clearPerAssignmentPendingSyncRecord(assignmentId);
 
       const notif = data.notification as WhatsAppNotificationLog;
       let targetUrl = '';
@@ -4718,7 +4984,7 @@ export default function App() {
             assignmentSnapshot?.driverCode ||
             assignmentSnapshot?.driverId ||
             fallbackDriverUid;
-          const fsSync = await submitDriverReportToFirestore({
+          void submitDriverReportToFirestore({
             assignment: {
               ...data.assignment,
               driverCode:
@@ -4729,56 +4995,65 @@ export default function App() {
             },
             stage: 'DELIVERED',
             serverSynced: true,
-            deliveredCatatan: catatanTiba,
+            skipQueueOnFailure: true,
+            deliveredCatatan: deliveredPayload.catatanSampai,
+            deliveredPayload,
+          }).then((fsSync) => {
+            if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
+              void runCloudTask(async () => {
+                for (const veh of (data.state as AppStateResponse).vehicles) {
+                  await upsertVehicleInFirestore(googleUser, veh);
+                }
+              });
+            }
           });
-
-          if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
-            void runCloudTask(async () => {
-              for (const veh of (data.state as AppStateResponse).vehicles) {
-                await upsertVehicleInFirestore(googleUser, veh);
-              }
-            });
-          } else if (fsSync.queuedLocally && !syncMeta?.firestoreQueuedInPortal) {
-            addToast(
-              'info',
-              'Laporan Aman Tersimpan di Memori HP',
-              'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
-            );
-          }
         }
       }
 
       addToast(
         'success',
         autoOpenWa
-          ? 'Status Delivered & WhatsApp Otomatis Dibuka'
-          : 'Status Delivered Tersimpan Real-Time',
-        `Admin menerima notifikasi real-time bahwa ${data.assignment.plateNumber} telah tiba di tujuan.`,
+          ? 'Data Delivered (Sampai) Tersimpan — Siap Kirim WA'
+          : 'Data Delivered (Sampai) Tersimpan Real-Time',
+        `Armada ${data.assignment.plateNumber} tercatat tiba di ${data.assignment.destination} dan siap lanjut Berita Acara Handover.`,
         targetUrl
           ? { actionLabel: 'Buka WhatsApp', actionHref: targetUrl }
           : undefined
       );
 
-      const sheetId = data.state.config.spreadsheetId;
-      const token =
-        sheetId && (googleUser || getAccessToken())
-          ? await ensureValidAccessToken()
-          : null;
-      if (token && sheetId) {
+      void (async () => {
         try {
-          await pushAssignmentsToSpreadsheet(
-            token,
-            sheetId,
-            data.state.assignments
-          );
-          await fetch('/api/sync/mark-pushed', {
-            method: 'POST',
-            headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
-          });
+          const sheetId = data.state.config.spreadsheetId;
+          const token =
+            googleUser || getAccessToken()
+              ? await ensureValidAccessToken()
+              : null;
+          if (token) {
+            const pendingPhotos = summarizeFleetPhotoDriveStats(
+              data.state.assignments
+            ).pendingPhotos;
+            if (pendingPhotos > 0) {
+              void handleSyncPhotosToDrive({
+                silent: true,
+                explicitAssignments: data.state.assignments,
+                explicitSpreadsheetId: sheetId,
+              });
+            } else if (sheetId) {
+              await pushAssignmentsToSpreadsheet(
+                token,
+                sheetId,
+                data.state.assignments
+              );
+              await fetch('/api/sync/mark-pushed', {
+                method: 'POST',
+                headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
+              });
+            }
+          }
         } catch {
-          // Will be pushed on next sync
+          // Will be pushed via server bridge / next background sync
         }
-      }
+      })();
 
       return notif ? { ...notif, message: freshMessage } : null;
     } catch (error) {
@@ -4788,11 +5063,17 @@ export default function App() {
           ...assignmentSnapshot,
           status: TaskStatus.DELIVERED,
           deliveredAt: nowIso,
-          notes: catatanTiba
-            ? assignmentSnapshot.notes
-              ? `${assignmentSnapshot.notes} | Tiba: ${catatanTiba}`
-              : `Tiba: ${catatanTiba}`
-            : assignmentSnapshot.notes,
+          deliveredData: {
+            timestamp: nowIso,
+            jenisKendaraan: deliveredPayload.jenisKendaraan || effectiveCooling,
+            kmSampai: deliveredPayload.kmSampai,
+            suhuSampai: deliveredPayload.suhuSampai,
+            bbmSampai: deliveredPayload.bbmSampai,
+            kondisiSampai: deliveredPayload.kondisiSampai,
+            catatanSampai: deliveredPayload.catatanSampai,
+            fotoOdometerSampai: deliveredPayload.fotoOdometerSampai,
+            fotoSuhuSampai: deliveredPayload.fotoSuhuSampai,
+          },
           needsSheetSync: true,
         };
 
@@ -4800,6 +5081,8 @@ export default function App() {
           optimisticAssignment.driverCode ||
           optimisticAssignment.driverId ||
           fallbackDriverUid;
+
+        // Immediately queue locally & update UI + open WhatsApp without blocking on slow mobile bridge
         enqueuePendingReportSync(
           {
             assignmentId,
@@ -4810,7 +5093,8 @@ export default function App() {
             stage: 'DELIVERED',
             serverSynced: false,
             firestoreSynced: Boolean(syncMeta?.firestoreAlreadySynced),
-            deliveredCatatan: catatanTiba,
+            deliveredCatatan: deliveredPayload.catatanSampai,
+            deliveredPayload,
             assignmentSnapshot: {
               ...optimisticAssignment,
               driverCode: exactOfflineDriverCode,
@@ -4849,15 +5133,30 @@ export default function App() {
           launchWhatsAppUrl(built.url);
         }
 
+        const activeConfigSnap = getActiveConfigSnapshot();
+        void pushDriverMutationViaBrowserBridge({
+          appsScriptUrl: activeConfigSnap.appsScriptUrl,
+          spreadsheetId: activeConfigSnap.spreadsheetId,
+          updatedAssignment: optimisticAssignment,
+        }).then((bridgedOk) => {
+          if (bridgedOk) {
+            removePendingReportSyncItem(`${assignmentId}__DELIVERED`);
+            clearPerAssignmentPendingSyncRecord(assignmentId);
+          }
+        });
+
         if (!syncMeta?.firestoreQueuedInPortal) {
           addToast(
             syncMeta?.firestoreAlreadySynced ? 'success' : 'info',
             syncMeta?.firestoreAlreadySynced
-              ? 'Status Delivered Masuk ke Database Cloud'
-              : 'Laporan Aman Tersimpan di Memori HP',
+              ? 'Data Delivered Masuk ke Database Cloud'
+              : 'Data Delivered Tersimpan — Siap Kirim WhatsApp',
             syncMeta?.firestoreAlreadySynced
-              ? 'Status tiba armada telah tersimpan langsung di Firestore Database.'
-              : 'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
+              ? 'Data Delivered (Sampai) telah tersimpan langsung di Firestore Database.'
+              : 'Data Delivered disimpan di memori HP & otomatis disinkronkan ke Spreadsheet di latar belakang.',
+            built.url
+              ? { actionLabel: 'Buka WhatsApp', actionHref: built.url }
+              : undefined
           );
         }
 
@@ -4918,32 +5217,35 @@ export default function App() {
     );
 
     try {
-      // 1. Wake up dormant mobile Firebase Auth session before report submission
+      // 1. Bounded non-blocking token warmup (never stalls mobile report submission)
       if (!syncMeta?.firestoreAlreadySynced && auth.currentUser) {
-        try {
-          await auth.currentUser.getIdToken(true);
-        } catch {
-          // Handled downstream via Fallback Identity / Pending Sync Queue
-        }
+        await warmAuthTokenNonBlocking(700);
       }
 
+      const activeConfigSnap = getActiveConfigSnapshot();
       const res = await safeApiFetch<{
         error?: string;
         assignment: Assignment;
         notification: WhatsAppNotificationLog;
         state: AppStateResponse;
-      }>(`/api/assignments/${encodeURIComponent(assignmentId)}/handover`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Client-Id': REALTIME_CLIENT_ID,
+      }>(
+        `/api/assignments/${encodeURIComponent(assignmentId)}/handover`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Id': REALTIME_CLIENT_ID,
+          },
+          body: JSON.stringify({
+            ...payload,
+            submittedByDriverUid: fallbackDriverUid,
+            assignmentSnapshot,
+            configSnapshot: activeConfigSnap,
+          }),
         },
-        body: JSON.stringify({
-          ...payload,
-          submittedByDriverUid: fallbackDriverUid,
-          assignmentSnapshot,
-        }),
-      });
+        0,
+        6000
+      );
       if (!res.ok || !res.data?.state) {
         if (
           res.isHtmlResponse ||
@@ -4957,12 +5259,14 @@ export default function App() {
         }
         addToast(
           'error',
-          'Gagal Mengirim Data Serah Terima',
-          res.errorMessage || 'Gagal mengirim data serah terima.'
+          'Gagal Mengirim Berita Acara Serah Terima',
+          res.errorMessage || 'Gagal mengirim berita acara serah terima.'
         );
         return null;
       }
       const data = res.data;
+      removePendingReportSyncItem(`${assignmentId}__SERAH_TERIMA`);
+      clearPerAssignmentPendingSyncRecord(assignmentId);
 
       const notif = data.notification as WhatsAppNotificationLog;
       let targetUrl = '';
@@ -4991,7 +5295,7 @@ export default function App() {
         explicitAssignment: data.assignment,
       });
 
-      // Sync to Firestore if not already written directly by DriverPortal
+      // Sync to Firestore in background without blocking UI
       if (data.assignment) {
         if (syncMeta?.firestoreAlreadySynced) {
           if (googleUser?.emailVerified) {
@@ -5006,7 +5310,7 @@ export default function App() {
             assignmentSnapshot?.driverCode ||
             assignmentSnapshot?.driverId ||
             fallbackDriverUid;
-          const fsSync = await submitDriverReportToFirestore({
+          void submitDriverReportToFirestore({
             assignment: {
               ...data.assignment,
               driverCode:
@@ -5017,70 +5321,73 @@ export default function App() {
             },
             stage: 'SERAH_TERIMA',
             serverSynced: true,
+            skipQueueOnFailure: true,
             handoverPayload: payload,
+          }).then((fsSync) => {
+            if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
+              void runCloudTask(async () => {
+                for (const veh of (data.state as AppStateResponse).vehicles) {
+                  await upsertVehicleInFirestore(googleUser, veh);
+                }
+              });
+            }
           });
-
-          if (fsSync.syncedToFirestore && googleUser?.emailVerified) {
-            void runCloudTask(async () => {
-              for (const veh of (data.state as AppStateResponse).vehicles) {
-                await upsertVehicleInFirestore(googleUser, veh);
-              }
-            });
-          } else if (fsSync.queuedLocally && !syncMeta?.firestoreQueuedInPortal) {
-            addToast(
-              'info',
-              'Laporan Aman Tersimpan di Memori HP',
-              'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
-            );
-          }
         }
       }
 
       addToast(
         'success',
         autoOpenWa
-          ? 'Handover Selesai & WhatsApp Otomatis Dibuka'
-          : 'Data Handover Tersimpan Real-Time',
+          ? 'Berita Acara Handover Selesai — Siap Kirim WA'
+          : 'Berita Acara Handover Tersimpan Real-Time',
         waTargetMode === 'GROUP'
-          ? 'Notifikasi lengkap Data Keberangkatan & Serah Terima siap dikirim ke Grup WA.'
+          ? 'Notifikasi lengkap Berita Acara Serah Terima siap dikirim ke Grup WA.'
           : waTargetMode === 'DRIVER'
-          ? 'Membuka notifikasi WhatsApp otomatis ke nomor Driver.'
-          : 'Membuka notifikasi WhatsApp otomatis ke Dispatcher.',
+          ? 'Notifikasi WhatsApp lengkap siap dikirim ke nomor Driver.'
+          : 'Notifikasi WhatsApp lengkap siap dikirim ke Dispatcher.',
         targetUrl
           ? { actionLabel: 'Buka WhatsApp', actionHref: targetUrl }
           : undefined
       );
 
-      const token =
-        googleUser || getAccessToken() ? await ensureValidAccessToken() : null;
-      const sheetId = data.state.config.spreadsheetId;
-      if (token) {
-        const pendingPhotos = summarizeFleetPhotoDriveStats(
-          data.state.assignments
-        ).pendingPhotos;
-        if (pendingPhotos > 0) {
-          void handleSyncPhotosToDrive({
-            silent: true,
-            explicitAssignments: data.state.assignments,
-            explicitSpreadsheetId: sheetId,
-          });
-        } else if (sheetId) {
-          try {
-            await pushAssignmentsToSpreadsheet(
-              token,
-              sheetId,
+      void (async () => {
+        try {
+          const token =
+            googleUser || getAccessToken()
+              ? await ensureValidAccessToken()
+              : null;
+          const sheetId = data.state.config.spreadsheetId;
+          if (token) {
+            const pendingPhotos = summarizeFleetPhotoDriveStats(
               data.state.assignments
-            );
-            await pushVehiclesToSpreadsheet(token, sheetId, data.state.vehicles);
-            await fetch('/api/sync/mark-pushed', {
-              method: 'POST',
-              headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
-            });
-          } catch {
-            // Will be pushed on next sync
+            ).pendingPhotos;
+            if (pendingPhotos > 0) {
+              void handleSyncPhotosToDrive({
+                silent: true,
+                explicitAssignments: data.state.assignments,
+                explicitSpreadsheetId: sheetId,
+              });
+            } else if (sheetId) {
+              await pushAssignmentsToSpreadsheet(
+                token,
+                sheetId,
+                data.state.assignments
+              );
+              await pushVehiclesToSpreadsheet(
+                token,
+                sheetId,
+                data.state.vehicles
+              );
+              await fetch('/api/sync/mark-pushed', {
+                method: 'POST',
+                headers: { 'X-Client-Id': REALTIME_CLIENT_ID },
+              });
+            }
           }
+        } catch {
+          // Will be pushed via server bridge / next background sync
         }
-      }
+      })();
 
       return notif ? { ...notif, message: freshMessage } : null;
     } catch (error) {
@@ -5106,10 +5413,22 @@ export default function App() {
           needsSheetSync: true,
         };
 
+        const otherStillActive = appStateRef.current.assignments.some(
+          (a) =>
+            a.id !== assignmentId &&
+            (a.vehicleId === optimisticAssignment.vehicleId ||
+              a.plateNumber.trim().toLowerCase() ===
+                optimisticAssignment.plateNumber.trim().toLowerCase()) &&
+            (a.status === TaskStatus.MENUNGGU_BERANGKAT ||
+              a.status === TaskStatus.DALAM_PERJALANAN ||
+              a.status === TaskStatus.DELIVERED)
+        );
         const exactOfflineDriverCode =
           optimisticAssignment.driverCode ||
           optimisticAssignment.driverId ||
           fallbackDriverUid;
+
+        // Immediately queue locally & update UI + open WhatsApp without blocking on slow mobile bridge
         enqueuePendingReportSync(
           {
             assignmentId,
@@ -5159,15 +5478,37 @@ export default function App() {
           launchWhatsAppUrl(built.url);
         }
 
+        const activeConfigSnap = getActiveConfigSnapshot();
+        void pushDriverMutationViaBrowserBridge({
+          appsScriptUrl: activeConfigSnap.appsScriptUrl,
+          spreadsheetId: activeConfigSnap.spreadsheetId,
+          updatedAssignment: optimisticAssignment,
+          updatedVehicleStatus: otherStillActive
+            ? undefined
+            : {
+                vehicleId: optimisticAssignment.vehicleId,
+                plateNumber: optimisticAssignment.plateNumber,
+                status: 'Siap Jalan',
+              },
+        }).then((bridgedOk) => {
+          if (bridgedOk) {
+            removePendingReportSyncItem(`${assignmentId}__SERAH_TERIMA`);
+            clearPerAssignmentPendingSyncRecord(assignmentId);
+          }
+        });
+
         if (!syncMeta?.firestoreQueuedInPortal) {
           addToast(
             syncMeta?.firestoreAlreadySynced ? 'success' : 'info',
             syncMeta?.firestoreAlreadySynced
               ? 'Laporan Serah Terima Masuk ke Database Cloud'
-              : 'Laporan Aman Tersimpan di Memori HP',
+              : 'Berita Acara Handover Tersimpan — Siap Kirim WhatsApp',
             syncMeta?.firestoreAlreadySynced
               ? 'Data serah terima telah tersimpan langsung di Firestore Database.'
-              : 'Koneksi terganggu. Laporan Anda aman disimpan di memori HP dan akan otomatis terkirim saat sinyal kembali.'
+              : 'Berita Acara disimpan di memori HP & otomatis disinkronkan ke Spreadsheet di latar belakang.',
+            built.url
+              ? { actionLabel: 'Buka WhatsApp', actionHref: built.url }
+              : undefined
           );
         }
 
@@ -5224,6 +5565,7 @@ export default function App() {
       const item = await hydratePendingReportSyncItem(rawItem);
       let latestAssignment = item.assignmentSnapshot;
       let serverOk = item.serverSynced;
+      const activeConfigSnap = getActiveConfigSnapshot();
 
       if (!serverOk) {
         try {
@@ -5246,17 +5588,24 @@ export default function App() {
                   ...item.departurePayload,
                   submittedByDriverUid: item.submittedByDriverUid,
                   assignmentSnapshot: item.assignmentSnapshot,
+                  configSnapshot: activeConfigSnap,
                 }
               : item.stage === 'DELIVERED'
               ? {
-                  catatanTiba: item.deliveredCatatan || '',
+                  ...item.deliveredPayload,
+                  catatanTiba:
+                    item.deliveredPayload?.catatanSampai ||
+                    item.deliveredCatatan ||
+                    '',
                   submittedByDriverUid: item.submittedByDriverUid,
                   assignmentSnapshot: item.assignmentSnapshot,
+                  configSnapshot: activeConfigSnap,
                 }
               : {
                   ...item.handoverPayload,
                   submittedByDriverUid: item.submittedByDriverUid,
                   assignmentSnapshot: item.assignmentSnapshot,
+                  configSnapshot: activeConfigSnap,
                 };
 
           const res = await safeApiFetch<{
@@ -5296,7 +5645,7 @@ export default function App() {
         }
       }
 
-      // Re-execute `submitReportToFirestoreWithOfflineRecovery`
+      // Re-execute `submitReportToFirestoreWithOfflineRecovery` (skip re-queueing when server + Spreadsheet sync already succeeded)
       const fsResult = await submitReportToFirestoreWithOfflineRecovery({
         assignmentId: item.assignmentId,
         fallbackDriverId: item.driverId,
@@ -5312,11 +5661,13 @@ export default function App() {
         },
         departurePayload: item.departurePayload,
         deliveredCatatan: item.deliveredCatatan,
+        deliveredPayload: item.deliveredPayload,
         handoverPayload: item.handoverPayload,
         serverSynced: serverOk,
+        skipQueueOnFailure: serverOk,
       });
 
-      if (fsResult.syncedToFirestore) {
+      if (serverOk || fsResult.syncedToFirestore) {
         if (typeof window !== 'undefined') {
           try {
             if (
@@ -5340,13 +5691,11 @@ export default function App() {
       setPendingItemRetryStatus(
         rawItem.queueId,
         'failed',
-        serverOk
-          ? 'Server menerima data, menunggu sinyal stabil ke Cloud Database.'
-          : 'Koneksi jaringan belum stabil. Data tetap aman di memori HP.'
+        'Koneksi jaringan belum stabil. Data tetap aman di memori HP.'
       );
       return false;
     },
-    [applyIncomingState]
+    [applyIncomingState, getActiveConfigSnapshot]
   );
 
   const retrySinglePendingReportItem = useCallback(
@@ -5374,7 +5723,7 @@ export default function App() {
                 : target.item.stage === 'DELIVERED'
                 ? 'Konfirmasi Tiba'
                 : 'Serah Terima'
-            } berhasil disinkronkan ke Cloud.`
+            } berhasil disinkronkan ke Server & Spreadsheet.`
           );
         } else if (!ok && !silent) {
           addToast(
@@ -5441,12 +5790,22 @@ export default function App() {
           const memExpMap = new Map<string, DriverExpense>(
             (appStateRef.current.driverExpenses || []).map((e) => [e.id, e])
           );
+          const activeConfigSnap = getActiveConfigSnapshot();
 
           for (const queuedExp of pendingExpenses) {
             const fullExp =
               memExpMap.get(queuedExp.id) ||
               vaultExpMap.get(queuedExp.id) ||
               queuedExp;
+            const matchedFleetCardSnapshot = (
+              appStateRef.current.fleetCards || []
+            ).find(
+              (fc) =>
+                (fullExp.fleetCardId &&
+                  fc.id.toLowerCase() === fullExp.fleetCardId.toLowerCase()) ||
+                fc.cardNumber.trim().toLowerCase() ===
+                  fullExp.fleetCardNumber.trim().toLowerCase()
+            );
             const res = await safeApiFetch<{
               expense?: DriverExpense;
               state?: AppStateResponse;
@@ -5458,7 +5817,11 @@ export default function App() {
                   'Content-Type': 'application/json',
                   'X-Client-Id': REALTIME_CLIENT_ID,
                 },
-                body: JSON.stringify(fullExp),
+                body: JSON.stringify({
+                  ...fullExp,
+                  fleetCardSnapshot: matchedFleetCardSnapshot,
+                  configSnapshot: activeConfigSnap,
+                }),
               },
               0
             );
@@ -5488,7 +5851,7 @@ export default function App() {
         isFlushingPendingRef.current = false;
       }
     },
-    [addToast, applyIncomingState, processPendingSyncEntry]
+    [addToast, applyIncomingState, getActiveConfigSnapshot, processPendingSyncEntry]
   );
 
   // Background Auto-Retry Sync: listens to `window.addEventListener('online')`, WebSocket wake-up, AND a 30s recovery pulse
