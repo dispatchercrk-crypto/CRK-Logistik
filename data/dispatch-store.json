@@ -8,7 +8,7 @@
   "liveCsvReadable": true,
   "driveRootFolderId": "1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
   "driveRootFolderUrl": "https://drive.google.com/drive/folders/1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
-  "lastSyncedAt": "2026-11-04T13:53:12.529Z",
+  "lastSyncedAt": "2026-11-04T17:21:49.724Z",
   "lastSyncedSpreadsheetId": "1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac",
   "syncedDriverIds": [
     "drv-001",
@@ -128,7 +128,9 @@
       "asg-1793738667063-11",
       "st-crk/2026/11/0011",
       "asg-1793739405738-12",
-      "st-crk/2026/11/0012"
+      "st-crk/2026/11/0012",
+      "asg-1793809118290-13",
+      "st-crk/2026/11/0013"
     ],
     "drivers": [],
     "vehicles": [],
@@ -241,7 +243,7 @@
       "vehicleType": "CDD BOX HINO Freezer",
       "capacity": "5 Ton",
       "capacityCbm": "20 CBM",
-      "status": "Dalam Tugas"
+      "status": "Siap Jalan"
     },
     {
       "id": "UNT-003",

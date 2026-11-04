@@ -423,6 +423,11 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     };
   }, [driver.id]);
 
+  const isServerStateHydrated =
+    Boolean(config.lastSyncedAt) ||
+    assignments.length > 0 ||
+    (config.lastSequence || 0) === 0;
+
   const myAssignments = useMemo(() => {
     const normDriverId = driver.id.trim().toLowerCase();
     const liveMatches = assignments.filter(
@@ -447,8 +452,12 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       });
     }
 
-    // Preserve cached Driver tasks if server list is transiently empty (e.g. cold start after 1 hour)
-    if (liveMatches.length === 0 && cachedDriverTasks.length > 0) {
+    // Preserve cached Driver tasks ONLY when offline or before initial server hydration finishes
+    if (
+      liveMatches.length === 0 &&
+      cachedDriverTasks.length > 0 &&
+      (!isBrowserOnline || !isServerStateHydrated)
+    ) {
       for (const cached of cachedDriverTasks) {
         if (
           cached.driverId.trim().toLowerCase() === normDriverId &&
@@ -463,7 +472,34 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
 
     return Array.from(byId.values());
-  }, [assignments, cachedDriverTasks, driver.id, embeddedTask]);
+  }, [
+    assignments,
+    cachedDriverTasks,
+    driver.id,
+    embeddedTask,
+    isBrowserOnline,
+    isServerStateHydrated,
+  ]);
+
+  // Clear stale cached Driver tasks when online and server explicitly confirms 0 Surat Tugas for this driver
+  useEffect(() => {
+    if (!isBrowserOnline || !isServerStateHydrated || embeddedTask) return;
+    const normDriverId = driver.id.trim().toLowerCase();
+    const hasLiveServerMatch = assignments.some(
+      (a) => a.driverId.trim().toLowerCase() === normDriverId
+    );
+    if (!hasLiveServerMatch && cachedDriverTasks.length > 0) {
+      setCachedDriverTasks([]);
+      void saveDriverAssignmentsCache(driver.id, []);
+    }
+  }, [
+    assignments,
+    cachedDriverTasks.length,
+    driver.id,
+    embeddedTask,
+    isBrowserOnline,
+    isServerStateHydrated,
+  ]);
 
   // Proactively cache every Surat Tugas (including explicit `driverCode`) in localStorage + IndexedDB
   // BEFORE the 1-hour Firebase Auth token can expire
@@ -485,6 +521,18 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     () => myAssignments.filter((a) => isCompletedTaskStatus(a.status)),
     [myAssignments]
   );
+
+  // Form Input Pengeluaran hanya aktif (ditampilkan) ketika ada Surat Tugas untuk Driver ini,
+  // dan hanya bisa diisi setelah seluruh Surat Tugas yang diberikan telah diselesaikan.
+  const hasSuratTugas = myAssignments.length > 0;
+  const canFillExpenseForm =
+    hasSuratTugas && activeTasks.length === 0 && completedTasks.length > 0;
+
+  useEffect(() => {
+    if (!hasSuratTugas && activeTab === 'pengeluaran') {
+      setActiveTab('aktif');
+    }
+  }, [hasSuratTugas, activeTab]);
 
   const myNotifications = useMemo(
     () =>
@@ -574,31 +622,37 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
   }, [fleetCards, selectedFleetCardId]);
 
+  const relevantCompletedTasks = useMemo(
+    () =>
+      completedTodayTasks.length > 0 ? completedTodayTasks : completedTasks,
+    [completedTodayTasks, completedTasks]
+  );
+
   useEffect(() => {
     if (!expenseTanggalPengiriman) {
       setExpenseTanggalPengiriman(
-        completedTodayTasks[0]?.tanggalTugas || todayWibDateStr
+        relevantCompletedTasks[0]?.tanggalTugas || todayWibDateStr
       );
     }
-  }, [completedTodayTasks, todayWibDateStr, expenseTanggalPengiriman]);
+  }, [relevantCompletedTasks, todayWibDateStr, expenseTanggalPengiriman]);
 
   useEffect(() => {
     if (tujuanManuallyEdited || expenseTujuanPengiriman.trim()) return;
-    const todayDestinations = Array.from(
+    const completedDestinations = Array.from(
       new Set(
-        completedTodayTasks
+        relevantCompletedTasks
           .map((t) => String(t.destination || '').trim())
           .filter(Boolean)
       )
     );
-    if (todayDestinations.length > 0) {
-      setExpenseTujuanPengiriman(todayDestinations.join(', '));
+    if (completedDestinations.length > 0) {
+      setExpenseTujuanPengiriman(completedDestinations.join(', '));
     }
-  }, [completedTodayTasks, tujuanManuallyEdited, expenseTujuanPengiriman]);
+  }, [relevantCompletedTasks, tujuanManuallyEdited, expenseTujuanPengiriman]);
 
   const destinationQuickOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const t of completedTodayTasks) {
+    for (const t of relevantCompletedTasks) {
       const d = String(t.destination || '').trim();
       if (d) set.add(d);
     }
@@ -607,18 +661,18 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       if (d) set.add(d);
     }
     return Array.from(set);
-  }, [completedTodayTasks, routes]);
+  }, [relevantCompletedTasks, routes]);
 
   useEffect(() => {
     if (expensePlateNumber.trim()) return;
     const recentPlate =
-      completedTodayTasks[0]?.plateNumber ||
+      relevantCompletedTasks[0]?.plateNumber ||
       completedTasks[0]?.plateNumber ||
       '';
     if (recentPlate) {
       setExpensePlateNumber(recentPlate);
     }
-  }, [completedTodayTasks, completedTasks, expensePlateNumber]);
+  }, [relevantCompletedTasks, completedTasks, expensePlateNumber]);
 
   const activeSelectedFleetCard = useMemo(
     () =>
@@ -642,9 +696,16 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     e.preventDefault();
     setExpenseValidationErr('');
 
-    if (activeTasks.length > 0) {
+    if (!hasSuratTugas) {
       setExpenseValidationErr(
-        `Selesaikan seluruh ${activeTasks.length} Surat Tugas aktif hari ini terlebih dahulu sebelum mengisi Form Input Pengeluaran.`
+        'Form Input Pengeluaran tidak aktif karena belum ada Surat Tugas.'
+      );
+      return;
+    }
+
+    if (!canFillExpenseForm || activeTasks.length > 0) {
+      setExpenseValidationErr(
+        `Selesaikan seluruh ${activeTasks.length} Surat Tugas yang diberikan terlebih dahulu sebelum mengisi Form Input Pengeluaran.`
       );
       return;
     }
@@ -691,7 +752,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       return;
     }
 
-    const completedNos = completedTodayTasks
+    const completedNos = relevantCompletedTasks
       .map((t) => t.noPenugasan)
       .filter(Boolean)
       .join(', ');
@@ -2640,18 +2701,20 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             >
               Tugas Aktif ({activeTasks.length})
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('pengeluaran')}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 tabular-nums ${
-                activeTab === 'pengeluaran'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Receipt className="h-3.5 w-3.5 text-sky-700" />
-              Form Input Pengeluaran ({mySubmittedExpenses.length})
-            </button>
+            {hasSuratTugas && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('pengeluaran')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 tabular-nums ${
+                  activeTab === 'pengeluaran'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Receipt className="h-3.5 w-3.5 text-sky-700" />
+                Form Input Pengeluaran ({mySubmittedExpenses.length})
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab('riwayat')}
@@ -2869,21 +2932,21 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                   akan tampil otomatis secara real-time di halaman ini.
                 </p>
 
-                <div className="mx-auto mt-5 max-w-md border-t border-slate-100 pt-5">
-                  <p className="text-xs text-slate-600">
-                    {completedTodayTasks.length > 0
-                      ? `Seluruh ${completedTodayTasks.length} Surat Tugas hari ini telah selesai. Silakan laporkan pengeluaran BBM & Tol harian Anda.`
-                      : 'Apabila seluruh Surat Tugas harian telah selesai, Anda dapat mengisi Form Input Pengeluaran.'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('pengeluaran')}
-                    className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition-colors hover:bg-slate-800"
-                  >
-                    <Receipt className="h-4 w-4 text-sky-400" />
-                    Buka Form Input Pengeluaran Harian
-                  </button>
-                </div>
+                {canFillExpenseForm && (
+                  <div className="mx-auto mt-5 max-w-md border-t border-slate-100 pt-5">
+                    <p className="text-xs text-slate-600">
+                      Seluruh {relevantCompletedTasks.length} Surat Tugas yang diberikan telah selesai. Silakan isi Form Input Pengeluaran harian Anda.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('pengeluaran')}
+                      className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition-colors hover:bg-slate-800"
+                    >
+                      <Receipt className="h-4 w-4 text-sky-400" />
+                      Buka Form Input Pengeluaran Harian
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               activeTasks.map((task) => {
@@ -4251,25 +4314,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         {/* ===================================================== */}
         {/* TAB: FORM INPUT PENGELUARAN (Sheet: Pengeluaran_Driver) */}
         {/* ===================================================== */}
-        {activeTab === 'pengeluaran' && (
+        {activeTab === 'pengeluaran' && hasSuratTugas && (
           <div className="mt-6 space-y-6">
-            {activeTasks.length > 0 ? (
+            {!canFillExpenseForm ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 sm:p-6">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
                   <div className="min-w-0 flex-1">
                     <h2 className="text-sm font-bold text-slate-900 sm:text-base">
-                      Selesaikan Semua Surat Tugas Hari Ini Terlebih Dahulu
+                      Selesaikan Semua Surat Tugas yang Diberikan Terlebih Dahulu
                     </h2>
                     <p className="mt-1 text-xs leading-relaxed text-slate-700 sm:text-sm">
-                      Form Input Pengeluaran digunakan untuk mengisi data pada
-                      Sheet <span className="font-mono font-semibold">Pengeluaran_Driver</span>{' '}
-                      setelah Anda menyelesaikan semua Surat Tugas yang diberikan
-                      per hari. Saat ini masih terdapat{' '}
+                      Form Input Pengeluaran baru dapat diisi setelah seluruh Surat Tugas yang diberikan kepada Anda selesai diserahterimakan (Handover) untuk tercatat pada Sheet{' '}
+                      <span className="font-mono font-semibold">
+                        Pengeluaran_Driver
+                      </span>
+                      . Saat ini masih terdapat{' '}
                       <strong className="font-mono tabular-nums">
                         {activeTasks.length}
                       </strong>{' '}
-                      Surat Tugas aktif yang belum diserahterimakan:
+                      Surat Tugas aktif yang belum diselesaikan:
                     </p>
 
                     <div className="mt-4 divide-y divide-amber-200/70 rounded-xl border border-amber-200/90 bg-white px-4 py-1">
@@ -4976,7 +5040,11 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           selectedTaskId && activeTab === 'aktif' ? 'hidden' : ''
         }`}
       >
-        <div className="grid h-[60px] grid-cols-4 items-center px-1.5">
+        <div
+          className={`grid h-[60px] ${
+            hasSuratTugas ? 'grid-cols-4' : 'grid-cols-3'
+          } items-center px-1.5`}
+        >
           <button
             type="button"
             onClick={() => setActiveTab('aktif')}
@@ -5004,32 +5072,34 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('pengeluaran')}
-            className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
-              activeTab === 'pengeluaran'
-                ? 'text-slate-950 font-bold'
-                : 'text-slate-500 font-medium hover:text-slate-800'
-            }`}
-          >
-            <div className="relative flex items-center justify-center">
-              <Receipt
-                className={`h-[19px] w-[19px] ${
-                  activeTab === 'pengeluaran' ? 'text-sky-700' : ''
-                }`}
-              />
-              {mySubmittedExpenses.length > 0 && (
-                <span className="ml-1 font-mono text-[10px] font-bold text-sky-700 tabular-nums">
-                  {mySubmittedExpenses.length}
-                </span>
+          {hasSuratTugas && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('pengeluaran')}
+              className={`relative flex h-full flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
+                activeTab === 'pengeluaran'
+                  ? 'text-slate-950 font-bold'
+                  : 'text-slate-500 font-medium hover:text-slate-800'
+              }`}
+            >
+              <div className="relative flex items-center justify-center">
+                <Receipt
+                  className={`h-[19px] w-[19px] ${
+                    activeTab === 'pengeluaran' ? 'text-sky-700' : ''
+                  }`}
+                />
+                {mySubmittedExpenses.length > 0 && (
+                  <span className="ml-1 font-mono text-[10px] font-bold text-sky-700 tabular-nums">
+                    {mySubmittedExpenses.length}
+                  </span>
+                )}
+              </div>
+              <span className="text-[11px] leading-tight">Pengeluaran</span>
+              {activeTab === 'pengeluaran' && (
+                <span className="absolute top-0 h-0.5 w-8 rounded-full bg-slate-900" />
               )}
-            </div>
-            <span className="text-[11px] leading-tight">Pengeluaran</span>
-            {activeTab === 'pengeluaran' && (
-              <span className="absolute top-0 h-0.5 w-8 rounded-full bg-slate-900" />
-            )}
-          </button>
+            </button>
+          )}
 
           <button
             type="button"

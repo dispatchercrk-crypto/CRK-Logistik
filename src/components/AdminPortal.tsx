@@ -615,6 +615,62 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setAppsScriptUrlInput(config.appsScriptUrl || '');
   }, [config.appsScriptUrl]);
 
+  const [verifyingServiceAccount, setVerifyingServiceAccount] =
+    useState<boolean>(false);
+  const [driveFolderInput, setDriveFolderInput] = useState<string>(
+    config.driveRootFolderUrl || config.driveRootFolderId || ''
+  );
+
+  useEffect(() => {
+    const nextDriveRef =
+      config.driveRootFolderUrl || config.driveRootFolderId || '';
+    if (nextDriveRef) {
+      setDriveFolderInput((prev) => (prev.trim() ? prev : nextDriveRef));
+    }
+  }, [config.driveRootFolderId, config.driveRootFolderUrl]);
+
+  const handleVerifyServiceAccount = async () => {
+    setVerifyingServiceAccount(true);
+    try {
+      const res = await safeApiFetch<{
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      }>('/api/service-account/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driveRootFolderInput: driveFolderInput.trim() || undefined,
+        }),
+      });
+      if (res.ok && res.data?.ok) {
+        onNotify(
+          'success',
+          'Service Account 24/7 Aktif',
+          res.data.message ||
+            'Server berhasil membaca dan menulis Google Spreadsheet secara langsung tanpa login Admin.'
+        );
+        await onManualSync();
+      } else {
+        onNotify(
+          'error',
+          'Verifikasi Service Account Belum Berhasil',
+          res.data?.error ||
+            res.errorMessage ||
+            'Periksa kembali GOOGLE_SERVICE_ACCOUNT_JSON di Pengaturan AI Studio serta akses Editor di Google Spreadsheet.'
+        );
+      }
+    } catch {
+      onNotify(
+        'error',
+        'Gagal Menghubungi Server',
+        'Tidak dapat memverifikasi Service Account saat ini.'
+      );
+    } finally {
+      setVerifyingServiceAccount(false);
+    }
+  };
+
   // WhatsApp Group, Direct Number & Prefix Settings
   const [waPhoneInput, setWaPhoneInput] = useState<string>(
     config.dispatcherWaPhone || ''
@@ -4560,7 +4616,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       {config.spreadsheetId && (
                         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-slate-600 tabular-nums">
                           <span className="font-semibold text-emerald-700">
-                            {config.appsScriptUrl
+                            {config.serviceAccountConfigured &&
+                            config.serviceAccountStatus === 'ACTIVE'
+                              ? 'Mode: Auto-Sync Dua Arah 24/7 Resmi (Google Service Account)'
+                              : config.appsScriptUrl
                               ? 'Mode: Auto-Sync Dua Arah 24/7 Permanen (Bridge)'
                               : hasGoogleToken ||
                                 config.serverSheetSyncMode ===
@@ -4596,6 +4655,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                      {config.serviceAccountConfigured && !googleUser && (
+                        <button
+                          type="button"
+                          onClick={onManualSync}
+                          disabled={isSyncing}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${
+                              isSyncing ? 'animate-spin' : ''
+                            }`}
+                          />
+                          {isSyncing
+                            ? 'Menyinkronkan...'
+                            : 'Sinkronkan Sekarang'}
+                        </button>
+                      )}
                       {!googleUser ? (
                         <GoogleSignInButton
                           onClick={onGoogleLogin}
@@ -4617,6 +4693,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             {isSyncing
                               ? 'Menyinkronkan...'
                               : hasGoogleToken ||
+                                Boolean(config.serviceAccountConfigured) ||
                                 Boolean(config.appsScriptUrl) ||
                                 config.serverSheetSyncMode ===
                                   'LIVE_CSV_AND_OAUTH'
@@ -4883,15 +4960,168 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
                 </div>
 
-                {/* Section 05: Permanent 24/7 Two-Way Google Apps Script Bridge (Zero Re-Auth Forever) */}
+                {/* Section 05: Official Google Service Account 24/7 Server-to-Server API */}
+                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 max-w-3xl">
+                      <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-700" />
+                        05. Google Service Account Resmi (API Server 24/7 — Tanpa Login Admin &amp; Tanpa Apps Script)
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Dengan{' '}
+                        <span className="font-semibold text-slate-900">
+                          Google Service Account
+                        </span>
+                        , server aplikasi menulis dan membaca Google Sheets API v4 secara langsung 24/7 di latar belakang. Saat Driver mengirim laporan Keberangkatan, Sampai (Delivered), Handover, maupun Pengeluaran kapan saja (meskipun Admin logout atau menutup browser), baris langsung masuk ke Spreadsheet dalam hitungan detik.
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs tabular-nums">
+                        {config.serviceAccountStatus === 'ACTIVE' ? (
+                          <span className="font-semibold text-emerald-700">
+                            Status: AKTIF 24/7 (Terverifikasi ke Google Sheets API)
+                          </span>
+                        ) : config.serviceAccountStatus ===
+                          'PERMISSION_NEEDED' ? (
+                          <span className="font-semibold text-amber-700">
+                            Status: Menunggu Izin Share &quot;Editor&quot; di Google Spreadsheet
+                          </span>
+                        ) : config.serviceAccountConfigured ? (
+                          <span className="font-semibold text-slate-800">
+                            Status: Kredensial Terdeteksi — Klik Tes &amp; Sinkronkan
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-slate-600">
+                            Status: Email Service Account Terdaftar — Menunggu Kunci JSON di .env.local / Secrets AI Studio
+                          </span>
+                        )}
+                      </div>
+
+                      {config.serviceAccountEmail && (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-semibold text-slate-700">
+                            Email Service Account (Pastikan sudah dibagikan sebagai Editor di Google Spreadsheet):
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <code className="rounded bg-white px-2.5 py-1 font-mono text-xs text-slate-900 border border-slate-200 break-all">
+                              {config.serviceAccountEmail}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onCopyText(
+                                  config.serviceAccountEmail || '',
+                                  'Email Service Account'
+                                )
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              Salin Email
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {config.serviceAccountLastError &&
+                        config.serviceAccountStatus !== 'ACTIVE' && (
+                          <p className="mt-2.5 text-xs text-amber-700 leading-relaxed">
+                            Info Diagnostik: {config.serviceAccountLastError}
+                          </p>
+                        )}
+
+                      <ol className="mt-3 space-y-1 text-xs text-slate-600 list-decimal list-inside">
+                        <li>
+                          Buka{' '}
+                          <span className="font-semibold text-slate-800">
+                            Google Cloud Console
+                          </span>{' '}
+                          &rarr; aktifkan{' '}
+                          <span className="font-semibold text-slate-800">
+                            Google Sheets API
+                          </span>{' '}
+                          &rarr; buka Service Account Anda &rarr; tab{' '}
+                          <span className="font-semibold text-slate-800">
+                            Keys &rarr; Add Key &rarr; Create new key (JSON)
+                          </span>
+                          .
+                        </li>
+                        <li>
+                          Di bar atas Preview AI Studio, ketuk tombol{' '}
+                          <span className="font-mono font-semibold text-slate-800">
+                            &lt;&gt;
+                          </span>{' '}
+                          (Code) atau{' '}
+                          <span className="font-semibold text-slate-800">
+                            Settings &rarr; Secrets
+                          </span>{' '}
+                          di panel Build kiri, buat file{' '}
+                          <span className="font-mono font-semibold text-slate-800">
+                            .env.local
+                          </span>{' '}
+                          (terlindungi otomatis oleh .gitignore) lalu tempel isi file JSON dari Cloud Console.
+                        </li>
+                        <li>
+                          Buka Google Spreadsheet Anda &rarr; klik{' '}
+                          <span className="font-semibold text-slate-800">
+                            Bagikan (Share)
+                          </span>{' '}
+                          &rarr; tempel alamat{' '}
+                          <span className="font-mono text-slate-800">
+                            client_email
+                          </span>{' '}
+                          Service Account sebagai{' '}
+                          <span className="font-semibold text-slate-800">
+                            Editor
+                          </span>
+                          , lalu klik tombol verifikasi di samping.
+                        </li>
+                      </ol>
+                    </div>
+
+                    <div className="shrink-0 flex flex-col gap-2.5 sm:items-end">
+                      <button
+                        type="button"
+                        disabled={verifyingServiceAccount || isSyncing}
+                        onClick={() => void handleVerifyServiceAccount()}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${
+                            verifyingServiceAccount ? 'animate-spin' : ''
+                          }`}
+                        />
+                        {verifyingServiceAccount
+                          ? 'Memverifikasi Service Account...'
+                          : 'Tes & Sinkronkan via Service Account'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-4 border-t border-slate-100">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Link / ID Folder Google Drive Bersama (Opsional — untuk Arsip Foto Otomatis)
+                    </label>
+                    <div className="mt-1.5 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+                      <input
+                        type="text"
+                        value={driveFolderInput}
+                        onChange={(e) => setDriveFolderInput(e.target.value)}
+                        placeholder="https://drive.google.com/drive/folders/... (Opsional)"
+                        className="w-full flex-1 rounded-lg border border-slate-300 px-3.5 py-2 font-mono text-xs text-slate-900 focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 06: Permanent 24/7 Two-Way Google Apps Script Bridge (Zero Re-Auth Forever) */}
                 {onSaveAppsScriptUrl && (
                   <div className="rounded-xl border border-slate-200 bg-white p-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0 max-w-3xl">
                         <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
                           <Database className="h-4 w-4 shrink-0 text-slate-700" />
-                          05. Sinkronisasi Dua Arah Permanen 24/7 Tanpa Login
-                          Ulang (Opsional — Sekali Pasang Selamanya)
+                          06. Alternatif Bridge Google Apps Script 24/7 (Opsional — Cadangan Tanpa Cloud Console)
                         </h3>
                         <p className="mt-1 text-sm text-slate-600">
                           Secara bawaan, aplikasi sudah memperbarui sesi Google

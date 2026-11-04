@@ -5,6 +5,13 @@ import { createServer as createHttpServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
+import {
+  getServiceAccountPublicStatus,
+  isGoogleServiceAccountConfigured,
+  pullAllTabsViaServiceAccount,
+  pushAllTabsViaServiceAccount,
+  uploadDataUriToDriveViaServiceAccount,
+} from './src/server/googleServiceAccount.ts';
 
 dotenv.config();
 
@@ -291,6 +298,9 @@ const DEFAULT_BOOT_APPS_SCRIPT_URL = (
   process.env.GOOGLE_APPS_SCRIPT_URL ||
   'https://script.google.com/macros/s/AKfycbz8pCRDJCL9JhbYRMHmYlPlgefG-KyQNDgiAOnb9MrSOHsKjVbv5jj-FIvcRnd1OEBS/exec'
 ).trim();
+const DEFAULT_BOOT_DRIVE_FOLDER_ID = extractServerGoogleDriveFolderId(
+  process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || ''
+);
 
 function getInitialStore(): PersistentStore {
   return {
@@ -303,8 +313,10 @@ function getInitialStore(): PersistentStore {
       : '',
     appsScriptUrl: DEFAULT_BOOT_APPS_SCRIPT_URL,
     liveCsvReadable: false,
-    driveRootFolderId: '',
-    driveRootFolderUrl: '',
+    driveRootFolderId: DEFAULT_BOOT_DRIVE_FOLDER_ID,
+    driveRootFolderUrl: DEFAULT_BOOT_DRIVE_FOLDER_ID
+      ? `https://drive.google.com/drive/folders/${DEFAULT_BOOT_DRIVE_FOLDER_ID}`
+      : '',
     lastSyncedAt: null,
     lastSyncedSpreadsheetId: '',
     syncedDriverIds: [],
@@ -1199,6 +1211,13 @@ function buildPublicState() {
     String(b.timestamp || '').localeCompare(String(a.timestamp || ''))
   );
 
+  const saInfo = getServiceAccountPublicStatus();
+  const effectiveDriveRootId =
+    store.driveRootFolderId ||
+    extractServerGoogleDriveFolderId(
+      process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || ''
+    );
+
   return {
     drivers: store.drivers,
     vehicles: store.vehicles,
@@ -1215,14 +1234,24 @@ function buildPublicState() {
       appsScriptBridgeStatus: store.appsScriptUrl
         ? store.appsScriptBridgeStatus || 'NONE'
         : 'NONE',
+      serviceAccountConfigured: saInfo.configured,
+      serviceAccountEmail: saInfo.clientEmail,
+      serviceAccountStatus: saInfo.status,
+      serviceAccountLastError: saInfo.lastError,
       serverSheetSyncMode:
-        store.appsScriptUrl && store.appsScriptBridgeStatus === 'ACTIVE'
+        saInfo.configured && saInfo.status === 'ACTIVE'
+          ? ('SERVICE_ACCOUNT_24_7' as const)
+          : store.appsScriptUrl && store.appsScriptBridgeStatus === 'ACTIVE'
           ? ('APPS_SCRIPT_24_7' as const)
           : store.liveCsvReadable
           ? ('LIVE_CSV_AND_OAUTH' as const)
           : ('OAUTH_AUTO' as const),
-      driveRootFolderId: store.driveRootFolderId || '',
-      driveRootFolderUrl: store.driveRootFolderUrl || '',
+      driveRootFolderId: effectiveDriveRootId || '',
+      driveRootFolderUrl:
+        store.driveRootFolderUrl ||
+        (effectiveDriveRootId
+          ? `https://drive.google.com/drive/folders/${effectiveDriveRootId}`
+          : ''),
       lastSyncedAt: store.lastSyncedAt,
       dispatcherWaPhone: store.dispatcherWaPhone,
       whatsappTargetMode: store.whatsappTargetMode || 'GROUP',
@@ -3946,10 +3975,379 @@ async function startServer() {
       e.catatan || '',
     ]);
 
+  const archivePendingMediaViaServiceAccount = async (): Promise<void> => {
+    if (!isGoogleServiceAccountConfigured()) return;
+    const rootFolderId = extractServerGoogleDriveFolderId(
+      store.driveRootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || ''
+    );
+    if (!rootFolderId) return;
+
+    let anyUploaded = false;
+    for (const asg of store.assignments) {
+      const monthSeg = String(asg.tanggalTugas || '').slice(0, 7) || 'Arsip';
+      const asgSub = `${asg.tanggalTugas || 'TGL'} _ ${asg.noPenugasan || asg.id} _ ${asg.plateNumber || 'UNIT'} _ ${asg.driverName || asg.driverId}`;
+      const dm: DriveMediaLinks = { ...(asg.driveMedia || {}) };
+      let asgChanged = false;
+
+      const slots: Array<{
+        raw?: string;
+        currentUrl?: string;
+        fileLabel: string;
+        assignUrl: (url: string) => void;
+      }> = [
+        {
+          raw: asg.departureData?.fotoOdometerBerangkat,
+          currentUrl: dm.fotoOdometerBerangkatUrl,
+          fileLabel: `01_Odometer_Berangkat_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.fotoOdometerBerangkatUrl = u;
+          },
+        },
+        {
+          raw: asg.departureData?.fotoSuhuBerangkat,
+          currentUrl: dm.fotoSuhuBerangkatUrl,
+          fileLabel: `02_Suhu_Berangkat_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.fotoSuhuBerangkatUrl = u;
+          },
+        },
+        {
+          raw:
+            asg.handoverData?.fotoOdometerSerahTerima ||
+            asg.deliveredData?.fotoOdometerSampai,
+          currentUrl: dm.fotoOdometerSerahTerimaUrl,
+          fileLabel: `03_Odometer_Sampai_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.fotoOdometerSerahTerimaUrl = u;
+          },
+        },
+        {
+          raw:
+            asg.handoverData?.fotoSuhuSerahTerima ||
+            asg.deliveredData?.fotoSuhuSampai,
+          currentUrl: dm.fotoSuhuSerahTerimaUrl,
+          fileLabel: `04_Suhu_Sampai_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.fotoSuhuSerahTerimaUrl = u;
+          },
+        },
+        {
+          raw: asg.handoverData?.fotoBuktiSerahTerima,
+          currentUrl: dm.fotoBuktiSerahTerimaUrl,
+          fileLabel: `05_Bukti_Serah_Terima_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.fotoBuktiSerahTerimaUrl = u;
+          },
+        },
+        {
+          raw: asg.handoverData?.tandaTanganPenerima,
+          currentUrl: dm.tandaTanganPenerimaUrl,
+          fileLabel: `06_TTD_Penerima_${asg.plateNumber}`,
+          assignUrl: (u) => {
+            dm.tandaTanganPenerimaUrl = u;
+          },
+        },
+      ];
+
+      for (const slot of slots) {
+        if (
+          slot.raw &&
+          slot.raw.startsWith('data:image/') &&
+          !slot.currentUrl
+        ) {
+          const uploaded = await uploadDataUriToDriveViaServiceAccount({
+            rootFolderId,
+            subfolderChain: [monthSeg, asgSub],
+            fileBaseName: slot.fileLabel,
+            dataUri: slot.raw,
+          });
+          if (uploaded) {
+            slot.assignUrl(uploaded.fileUrl);
+            dm.folderId = uploaded.folderId;
+            dm.folderUrl = uploaded.folderUrl;
+            dm.syncedAt = new Date().toISOString();
+            asg.driveFolderUrl = uploaded.folderUrl;
+            asgChanged = true;
+            anyUploaded = true;
+          }
+        }
+      }
+
+      if (asgChanged) {
+        asg.driveMedia = dm;
+      }
+    }
+
+    for (const exp of store.driverExpenses) {
+      const monthSeg = String(exp.tanggal || '').slice(0, 7) || 'Pengeluaran';
+      if (
+        exp.fotoStrukBbm &&
+        exp.fotoStrukBbm.startsWith('data:image/') &&
+        !exp.fotoStrukBbmUrl
+      ) {
+        const upBbm = await uploadDataUriToDriveViaServiceAccount({
+          rootFolderId,
+          subfolderChain: ['Struk_Pengeluaran_Driver', monthSeg],
+          fileBaseName: `Struk_BBM_${exp.id}_${exp.driverId}`,
+          dataUri: exp.fotoStrukBbm,
+        });
+        if (upBbm) {
+          exp.fotoStrukBbmUrl = upBbm.fileUrl;
+          anyUploaded = true;
+        }
+      }
+      if (
+        exp.fotoStrukTol &&
+        exp.fotoStrukTol.startsWith('data:image/') &&
+        !exp.fotoStrukTolUrl
+      ) {
+        const upTol = await uploadDataUriToDriveViaServiceAccount({
+          rootFolderId,
+          subfolderChain: ['Struk_Pengeluaran_Driver', monthSeg],
+          fileBaseName: `Struk_Tol_${exp.id}_${exp.driverId}`,
+          dataUri: exp.fotoStrukTol,
+        });
+        if (upTol) {
+          exp.fotoStrukTolUrl = upTol.fileUrl;
+          anyUploaded = true;
+        }
+      }
+    }
+
+    if (anyUploaded) {
+      if (!store.driveRootFolderId) {
+        store.driveRootFolderId = rootFolderId;
+      }
+      if (!store.driveRootFolderUrl) {
+        store.driveRootFolderUrl = `https://drive.google.com/drive/folders/${rootFolderId}`;
+      }
+      saveStore(store);
+    }
+  };
+
+  const prepareSheetsPushSnapshot = (sheetId: string) => {
+    const sortedAssignments = [...store.assignments].sort(
+      (a, b) => a.sequenceNumber - b.sequenceNumber
+    );
+    const sortedExpenses = [...store.driverExpenses].sort((a, b) =>
+      String(a.timestamp || '').localeCompare(String(b.timestamp || ''))
+    );
+
+    const pushedAsgFingerprints = new Map<string, string>(
+      sortedAssignments.map((a) => [a.id, buildAssignmentSyncFingerprint(a)])
+    );
+    const pushedAsgNos = new Set<string>(
+      sortedAssignments
+        .map((a) => normalizeSyncKey(a.noPenugasan))
+        .filter(Boolean)
+    );
+    const pushedExpFingerprints = new Map<string, string>(
+      sortedExpenses.map((e) => [e.id, buildExpenseSyncFingerprint(e)])
+    );
+    const pushedExpIds = new Set<string>(
+      sortedExpenses.map((e) => normalizeSyncKey(e.id)).filter(Boolean)
+    );
+    const pushedFleetBalances = new Map<string, number>(
+      store.fleetCards.map((fc) => [
+        normalizeSyncKey(fc.id),
+        Math.round(Number(fc.balance) || 0),
+      ])
+    );
+    const pushedDriverIds = new Set<string>(
+      store.drivers.map((d) => normalizeSyncKey(d.id)).filter(Boolean)
+    );
+    const pushedVehicleIds = new Set<string>(
+      store.vehicles.map((v) => normalizeSyncKey(v.id)).filter(Boolean)
+    );
+    const pushedRouteIds = new Set<string>(
+      store.routes.map((r) => normalizeSyncKey(r.id)).filter(Boolean)
+    );
+
+    const rowsPayload = {
+      driversRows: store.drivers.map((d) => [
+        d.id,
+        d.name,
+        d.phone,
+        d.pin,
+        d.licenseType,
+        d.active ? 'Aktif' : 'Nonaktif',
+      ]),
+      vehiclesRows: store.vehicles.map((v) => [
+        v.id,
+        v.plateNumber,
+        v.vehicleType,
+        v.capacity,
+        v.status,
+        v.capacityCbm || '',
+      ]),
+      routesRows: store.routes.map((r) => [
+        r.id,
+        r.destination,
+        r.picName,
+        r.picPhone,
+      ]),
+      fleetCardsRows: store.fleetCards.map((fc) => [
+        fc.id,
+        fc.cardNumber,
+        String(Math.round(Number(fc.balance) || 0)),
+      ]),
+      assignmentsRows: sortedAssignments.map(buildAssignmentRowForSheetBridge),
+      driverExpensesRows: sortedExpenses.map((e) => [
+        e.id,
+        e.timestamp,
+        e.tanggal,
+        e.driverId,
+        e.driverName,
+        e.plateNumber || '',
+        e.completedAssignmentNos || '',
+        e.fleetCardId || '',
+        e.fleetCardNumber,
+        String(Math.round(Number(e.totalPengirimanBbm) || 0)),
+        e.fotoStrukBbmUrl ||
+          (e.fotoStrukBbm ? 'Foto Struk BBM Tersimpan' : ''),
+        String(Math.round(Number(e.totalPengeluaranTol) || 0)),
+        e.fotoStrukTolUrl ||
+          (e.fotoStrukTol ? 'Foto Struk Tol Tersimpan' : ''),
+        String(
+          Math.round(
+            Number(e.totalPengeluaran) ||
+              (Number(e.totalPengirimanBbm) || 0) +
+                (Number(e.totalPengeluaranTol) || 0)
+          )
+        ),
+        e.catatan || '',
+        e.tanggalPengiriman || e.tanggal || '',
+        e.tujuanPengiriman || '',
+      ]),
+      configRows: [
+        ['admin_pin', store.adminPin],
+        ['dispatcher_wa', store.dispatcherWaPhone],
+        ['whatsapp_target_mode', store.whatsappTargetMode || 'GROUP'],
+        ['whatsapp_group_name', store.whatsappGroupName || ''],
+        ['whatsapp_group_invite', store.whatsappGroupInviteUrl || ''],
+        ['letter_prefix', store.letterPrefix || 'ST-CRK'],
+        ['public_portal_url', store.publicPortalBaseUrl || ''],
+        ['apps_script_url', store.appsScriptUrl || ''],
+        ['drive_root_folder_id', store.driveRootFolderId || ''],
+        ['drive_root_folder_url', store.driveRootFolderUrl || ''],
+      ],
+    };
+
+    const commitSyncedTrackers = () => {
+      store.pendingMasterDeletionPush = false;
+      store.pendingAssignmentDeletionPush = false;
+      store.pendingExpenseDeletionPush = false;
+
+      store.unsyncedDriverIds = (store.unsyncedDriverIds || []).filter(
+        (id) => !pushedDriverIds.has(normalizeSyncKey(id))
+      );
+      store.unsyncedVehicleIds = (store.unsyncedVehicleIds || []).filter(
+        (id) => !pushedVehicleIds.has(normalizeSyncKey(id))
+      );
+      store.unsyncedRouteIds = (store.unsyncedRouteIds || []).filter(
+        (id) => !pushedRouteIds.has(normalizeSyncKey(id))
+      );
+      store.unsyncedFleetCardIds = (store.unsyncedFleetCardIds || []).filter(
+        (id) => {
+          const norm = normalizeSyncKey(id);
+          const currentCard = store.fleetCards.find(
+            (fc) => normalizeSyncKey(fc.id) === norm
+          );
+          if (!currentCard) return false;
+          return (
+            pushedFleetBalances.get(norm) !==
+            Math.round(Number(currentCard.balance) || 0)
+          );
+        }
+      );
+
+      store.needsMasterSheetSync =
+        store.unsyncedDriverIds.length > 0 ||
+        store.unsyncedVehicleIds.length > 0 ||
+        store.unsyncedRouteIds.length > 0 ||
+        store.unsyncedFleetCardIds.length > 0;
+
+      store.assignments = store.assignments.map((a) => {
+        const pushedFp = pushedAsgFingerprints.get(a.id);
+        if (pushedFp && pushedFp === buildAssignmentSyncFingerprint(a)) {
+          return { ...a, needsSheetSync: false };
+        }
+        return a;
+      });
+
+      store.driverExpenses = store.driverExpenses.map((e) => {
+        const pushedFp = pushedExpFingerprints.get(e.id);
+        if (pushedFp && pushedFp === buildExpenseSyncFingerprint(e)) {
+          return { ...e, needsSheetSync: false };
+        }
+        return e;
+      });
+
+      store.lastSyncedAt = new Date().toISOString();
+      store.lastSyncedSpreadsheetId = sheetId;
+
+      store.syncedDriverIds = store.drivers
+        .map((d) => normalizeSyncKey(d.id))
+        .filter((k) => k && pushedDriverIds.has(k));
+      store.syncedVehicleIds = store.vehicles
+        .map((v) => normalizeSyncKey(v.id))
+        .filter((k) => k && pushedVehicleIds.has(k));
+      store.syncedRouteIds = store.routes
+        .map((r) => normalizeSyncKey(r.id))
+        .filter((k) => k && pushedRouteIds.has(k));
+      store.syncedFleetCardIds = store.fleetCards
+        .map((fc) => normalizeSyncKey(fc.id))
+        .filter((k) => k && pushedFleetBalances.has(k));
+      store.syncedAssignmentNos = store.assignments
+        .map((a) => normalizeSyncKey(a.noPenugasan))
+        .filter((k) => k && pushedAsgNos.has(k));
+      store.syncedExpenseIds = store.driverExpenses
+        .map((e) => normalizeSyncKey(e.id))
+        .filter((k) => k && pushedExpIds.has(k));
+
+      saveStore(store);
+    };
+
+    return { rowsPayload, commitSyncedTrackers };
+  };
+
+  const pushStateViaServiceAccountInternal = async (): Promise<boolean> => {
+    const sheetId = String(store.spreadsheetId || '').trim();
+    if (!sheetId || !isGoogleServiceAccountConfigured()) return false;
+
+    if (
+      !store.lastSyncedAt &&
+      store.drivers.length === 0 &&
+      store.assignments.length === 0 &&
+      !store.pendingAssignmentDeletionPush &&
+      !store.pendingMasterDeletionPush
+    ) {
+      return false;
+    }
+
+    try {
+      await archivePendingMediaViaServiceAccount();
+      const { rowsPayload, commitSyncedTrackers } =
+        prepareSheetsPushSnapshot(sheetId);
+      const ok = await pushAllTabsViaServiceAccount(sheetId, rowsPayload);
+      if (ok) {
+        commitSyncedTrackers();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
   const pushStateViaAppsScriptBridgeInternal = async (): Promise<boolean> => {
     const bridgeUrl = String(store.appsScriptUrl || '').trim();
     const sheetId = String(store.spreadsheetId || '').trim();
-    if (!bridgeUrl || !sheetId || !/^https:\/\/script\.google\.com\//i.test(bridgeUrl)) {
+    if (
+      !bridgeUrl ||
+      !sheetId ||
+      !/^https:\/\/script\.google\.com\//i.test(bridgeUrl)
+    ) {
       return false;
     }
 
@@ -3965,43 +4363,8 @@ async function startServer() {
     }
 
     try {
-      const sortedAssignments = [...store.assignments].sort(
-        (a, b) => a.sequenceNumber - b.sequenceNumber
-      );
-      const sortedExpenses = [...store.driverExpenses].sort((a, b) =>
-        String(a.timestamp || '').localeCompare(String(b.timestamp || ''))
-      );
-
-      // Snapshot exact versions being pushed so concurrent mutations during fetch are never prematurely marked synced
-      const pushedAsgFingerprints = new Map<string, string>(
-        sortedAssignments.map((a) => [a.id, buildAssignmentSyncFingerprint(a)])
-      );
-      const pushedAsgNos = new Set<string>(
-        sortedAssignments
-          .map((a) => normalizeSyncKey(a.noPenugasan))
-          .filter(Boolean)
-      );
-      const pushedExpFingerprints = new Map<string, string>(
-        sortedExpenses.map((e) => [e.id, buildExpenseSyncFingerprint(e)])
-      );
-      const pushedExpIds = new Set<string>(
-        sortedExpenses.map((e) => normalizeSyncKey(e.id)).filter(Boolean)
-      );
-      const pushedFleetBalances = new Map<string, number>(
-        store.fleetCards.map((fc) => [
-          normalizeSyncKey(fc.id),
-          Math.round(Number(fc.balance) || 0),
-        ])
-      );
-      const pushedDriverIds = new Set<string>(
-        store.drivers.map((d) => normalizeSyncKey(d.id)).filter(Boolean)
-      );
-      const pushedVehicleIds = new Set<string>(
-        store.vehicles.map((v) => normalizeSyncKey(v.id)).filter(Boolean)
-      );
-      const pushedRouteIds = new Set<string>(
-        store.routes.map((r) => normalizeSyncKey(r.id)).filter(Boolean)
-      );
+      const { rowsPayload, commitSyncedTrackers } =
+        prepareSheetsPushSnapshot(sheetId);
 
       const resp = await fetch(bridgeUrl, {
         method: 'POST',
@@ -4010,73 +4373,7 @@ async function startServer() {
         body: JSON.stringify({
           action: 'push_all',
           spreadsheetId: sheetId,
-          driversRows: store.drivers.map((d) => [
-            d.id,
-            d.name,
-            d.phone,
-            d.pin,
-            d.licenseType,
-            d.active ? 'Aktif' : 'Nonaktif',
-          ]),
-          vehiclesRows: store.vehicles.map((v) => [
-            v.id,
-            v.plateNumber,
-            v.vehicleType,
-            v.capacity,
-            v.status,
-            v.capacityCbm || '',
-          ]),
-          routesRows: store.routes.map((r) => [
-            r.id,
-            r.destination,
-            r.picName,
-            r.picPhone,
-          ]),
-          fleetCardsRows: store.fleetCards.map((fc) => [
-            fc.id,
-            fc.cardNumber,
-            String(Math.round(Number(fc.balance) || 0)),
-          ]),
-          assignmentsRows: sortedAssignments.map(buildAssignmentRowForSheetBridge),
-          driverExpensesRows: sortedExpenses.map((e) => [
-            e.id,
-            e.timestamp,
-            e.tanggal,
-            e.driverId,
-            e.driverName,
-            e.plateNumber || '',
-            e.completedAssignmentNos || '',
-            e.fleetCardId || '',
-            e.fleetCardNumber,
-            String(Math.round(Number(e.totalPengirimanBbm) || 0)),
-            e.fotoStrukBbmUrl ||
-              (e.fotoStrukBbm ? 'Foto Struk BBM Tersimpan' : ''),
-            String(Math.round(Number(e.totalPengeluaranTol) || 0)),
-            e.fotoStrukTolUrl ||
-              (e.fotoStrukTol ? 'Foto Struk Tol Tersimpan' : ''),
-            String(
-              Math.round(
-                Number(e.totalPengeluaran) ||
-                  (Number(e.totalPengirimanBbm) || 0) +
-                    (Number(e.totalPengeluaranTol) || 0)
-              )
-            ),
-            e.catatan || '',
-            e.tanggalPengiriman || e.tanggal || '',
-            e.tujuanPengiriman || '',
-          ]),
-          configRows: [
-            ['admin_pin', store.adminPin],
-            ['dispatcher_wa', store.dispatcherWaPhone],
-            ['whatsapp_target_mode', store.whatsappTargetMode || 'GROUP'],
-            ['whatsapp_group_name', store.whatsappGroupName || ''],
-            ['whatsapp_group_invite', store.whatsappGroupInviteUrl || ''],
-            ['letter_prefix', store.letterPrefix || 'ST-CRK'],
-            ['public_portal_url', store.publicPortalBaseUrl || ''],
-            ['apps_script_url', store.appsScriptUrl || ''],
-            ['drive_root_folder_id', store.driveRootFolderId || ''],
-            ['drive_root_folder_url', store.driveRootFolderUrl || ''],
-          ],
+          ...rowsPayload,
         }),
         signal: AbortSignal.timeout(12000),
       });
@@ -4105,78 +4402,7 @@ async function startServer() {
       };
       if (parsed?.ok || parsed?.success) {
         store.appsScriptBridgeStatus = 'ACTIVE';
-        store.pendingMasterDeletionPush = false;
-        store.pendingAssignmentDeletionPush = false;
-        store.pendingExpenseDeletionPush = false;
-
-        store.unsyncedDriverIds = (store.unsyncedDriverIds || []).filter(
-          (id) => !pushedDriverIds.has(normalizeSyncKey(id))
-        );
-        store.unsyncedVehicleIds = (store.unsyncedVehicleIds || []).filter(
-          (id) => !pushedVehicleIds.has(normalizeSyncKey(id))
-        );
-        store.unsyncedRouteIds = (store.unsyncedRouteIds || []).filter(
-          (id) => !pushedRouteIds.has(normalizeSyncKey(id))
-        );
-        store.unsyncedFleetCardIds = (store.unsyncedFleetCardIds || []).filter(
-          (id) => {
-            const norm = normalizeSyncKey(id);
-            const currentCard = store.fleetCards.find(
-              (fc) => normalizeSyncKey(fc.id) === norm
-            );
-            if (!currentCard) return false;
-            return (
-              pushedFleetBalances.get(norm) !==
-              Math.round(Number(currentCard.balance) || 0)
-            );
-          }
-        );
-
-        store.needsMasterSheetSync =
-          store.unsyncedDriverIds.length > 0 ||
-          store.unsyncedVehicleIds.length > 0 ||
-          store.unsyncedRouteIds.length > 0 ||
-          store.unsyncedFleetCardIds.length > 0;
-
-        store.assignments = store.assignments.map((a) => {
-          const pushedFp = pushedAsgFingerprints.get(a.id);
-          if (pushedFp && pushedFp === buildAssignmentSyncFingerprint(a)) {
-            return { ...a, needsSheetSync: false };
-          }
-          return a;
-        });
-
-        store.driverExpenses = store.driverExpenses.map((e) => {
-          const pushedFp = pushedExpFingerprints.get(e.id);
-          if (pushedFp && pushedFp === buildExpenseSyncFingerprint(e)) {
-            return { ...e, needsSheetSync: false };
-          }
-          return e;
-        });
-
-        store.lastSyncedAt = new Date().toISOString();
-        store.lastSyncedSpreadsheetId = sheetId;
-
-        store.syncedDriverIds = store.drivers
-          .map((d) => normalizeSyncKey(d.id))
-          .filter((k) => k && pushedDriverIds.has(k));
-        store.syncedVehicleIds = store.vehicles
-          .map((v) => normalizeSyncKey(v.id))
-          .filter((k) => k && pushedVehicleIds.has(k));
-        store.syncedRouteIds = store.routes
-          .map((r) => normalizeSyncKey(r.id))
-          .filter((k) => k && pushedRouteIds.has(k));
-        store.syncedFleetCardIds = store.fleetCards
-          .map((fc) => normalizeSyncKey(fc.id))
-          .filter((k) => k && pushedFleetBalances.has(k));
-        store.syncedAssignmentNos = store.assignments
-          .map((a) => normalizeSyncKey(a.noPenugasan))
-          .filter((k) => k && pushedAsgNos.has(k));
-        store.syncedExpenseIds = store.driverExpenses
-          .map((e) => normalizeSyncKey(e.id))
-          .filter((k) => k && pushedExpIds.has(k));
-
-        saveStore(store);
+        commitSyncedTrackers();
         return true;
       }
       if (
@@ -4193,11 +4419,19 @@ async function startServer() {
     }
   };
 
+  const pushStateToSheetsServerInternal = async (): Promise<boolean> => {
+    if (isGoogleServiceAccountConfigured()) {
+      const saPushed = await pushStateViaServiceAccountInternal();
+      if (saPushed) return true;
+    }
+    return pushStateViaAppsScriptBridgeInternal();
+  };
+
   const pullSpreadsheetFromServerAutoInternal = async (options?: {
     pushPendingChanges?: boolean;
   }): Promise<{
     ok: boolean;
-    source?: 'APPS_SCRIPT' | 'LIVE_CSV';
+    source?: 'SERVICE_ACCOUNT' | 'APPS_SCRIPT' | 'LIVE_CSV';
     hasSheetDeletionsToPrune?: boolean;
     mutated?: boolean;
   }> => {
@@ -4208,6 +4442,55 @@ async function startServer() {
     const shouldPushPending = options?.pushPendingChanges !== false;
 
     try {
+      // Priority 1: Official Google Service Account 24/7 Server-to-Server API (Zero Admin Login Required)
+      if (isGoogleServiceAccountConfigured()) {
+        try {
+          const saTabs = await pullAllTabsViaServiceAccount(sheetId);
+          const payload = parseRawTabMatricesToPayload(sheetId, {
+            driverAll: saTabs.Master_Driver || [],
+            vehicleAll: saTabs.Master_Armada || [],
+            routeAll: saTabs.Master_Rute || [],
+            fleetCardAll: saTabs.Master_Fleet_Card || [],
+            assignmentAll: saTabs.Surat_Tugas || [],
+            expenseAll: saTabs.Pengeluaran_Driver || [],
+            configAll: saTabs.Konfigurasi || [],
+            title: saTabs.title,
+          });
+          const rec = reconcilePulledSheetsIntoStore(payload);
+          const hasAnyLocalDirty =
+            rec.hasPendingDriverUpdates ||
+            rec.hasPendingMasterUpdates ||
+            rec.hasCustomPinToPush ||
+            store.pendingAssignmentDeletionPush ||
+            store.pendingExpenseDeletionPush ||
+            store.pendingMasterDeletionPush ||
+            store.assignments.some((a) => a.needsSheetSync) ||
+            store.driverExpenses.some((e) => e.needsSheetSync) ||
+            (store.unsyncedFleetCardIds?.length || 0) > 0;
+
+          if (shouldPushPending && hasAnyLocalDirty) {
+            await pushStateToSheetsServerInternal();
+          } else {
+            saveStore(store);
+          }
+          if (rec.mutated) {
+            broadcastRealtime({
+              type: 'state:sync',
+              actorRole: 'SYSTEM',
+            });
+          }
+          return {
+            ok: true,
+            source: 'SERVICE_ACCOUNT',
+            hasSheetDeletionsToPrune: rec.hasSheetDeletionsToPrune,
+            mutated: rec.mutated,
+          };
+        } catch {
+          // Fall back gracefully to Apps Script / Live CSV if Service Account lacks Editor share permission yet
+        }
+      }
+
+      // Priority 2: Google Apps Script Bridge (/exec)
       const bridgeUrl = String(store.appsScriptUrl || '').trim();
       if (bridgeUrl && /^https:\/\/script\.google\.com\//i.test(bridgeUrl)) {
         try {
@@ -4274,7 +4557,7 @@ async function startServer() {
                   (store.unsyncedFleetCardIds?.length || 0) > 0;
 
                 if (shouldPushPending && hasAnyLocalDirty) {
-                  await pushStateViaAppsScriptBridgeInternal();
+                  await pushStateToSheetsServerInternal();
                 } else {
                   saveStore(store);
                 }
@@ -4390,14 +4673,15 @@ async function startServer() {
       const rec = reconcilePulledSheetsIntoStore(payload);
       if (
         shouldPushPending &&
-        String(store.appsScriptUrl || '').trim() &&
+        (isGoogleServiceAccountConfigured() ||
+          String(store.appsScriptUrl || '').trim()) &&
         (rec.hasPendingDriverUpdates ||
           rec.hasPendingMasterUpdates ||
           rec.hasCustomPinToPush ||
           store.assignments.some((a) => a.needsSheetSync) ||
           store.driverExpenses.some((e) => e.needsSheetSync))
       ) {
-        await pushStateViaAppsScriptBridgeInternal();
+        await pushStateToSheetsServerInternal();
       } else {
         saveStore(store);
       }
@@ -4428,13 +4712,15 @@ async function startServer() {
   ): Promise<boolean> => {
     const bridgeUrl = String(store.appsScriptUrl || '').trim();
     const sheetId = String(store.spreadsheetId || '').trim();
-    if (!bridgeUrl || !sheetId) return false;
+    const hasWriteChannel =
+      isGoogleServiceAccountConfigured() || Boolean(bridgeUrl);
+    if (!hasWriteChannel || !sheetId) return false;
 
     const syncJob = enqueueSheetSync(async () => {
       await pullSpreadsheetFromServerAutoInternal({
         pushPendingChanges: false,
       });
-      return await pushStateViaAppsScriptBridgeInternal();
+      return await pushStateToSheetsServerInternal();
     });
 
     if (timeoutMs <= 0) {
@@ -4459,9 +4745,92 @@ async function startServer() {
 
   const triggerServerAppsScriptPushIfConfigured = (): void => {
     const bridgeUrl = String(store.appsScriptUrl || '').trim();
-    if (!bridgeUrl || !store.spreadsheetId) return;
+    const hasWriteChannel =
+      isGoogleServiceAccountConfigured() || Boolean(bridgeUrl);
+    if (!hasWriteChannel || !store.spreadsheetId) return;
     void syncAndPushStoreToSheets(15000);
   };
+
+  // Endpoint to verify & trigger immediate 24/7 Google Service Account sync
+  app.post('/api/service-account/verify', async (req, res) => {
+    if (
+      typeof req.body?.driveRootFolderInput === 'string' &&
+      req.body.driveRootFolderInput.trim()
+    ) {
+      const parsedFolderId = extractServerGoogleDriveFolderId(
+        req.body.driveRootFolderInput
+      );
+      if (parsedFolderId) {
+        store.driveRootFolderId = parsedFolderId;
+        store.driveRootFolderUrl = `https://drive.google.com/drive/folders/${parsedFolderId}`;
+        saveStore(store);
+      }
+    }
+
+    if (!isGoogleServiceAccountConfigured()) {
+      res.status(400).json({
+        ok: false,
+        error:
+          'Kunci JSON Service Account belum ditemukan. Ketuk ikon <> (Code) di sebelah tombol Preview untuk membuat file .env.local lalu tempel isi file JSON di dalamnya, atau isi GOOGLE_SERVICE_ACCOUNT_JSON pada menu Secrets di panel Build.',
+        serviceAccount: getServiceAccountPublicStatus(),
+        state: buildPublicState(),
+      });
+      return;
+    }
+
+    const sheetId = String(store.spreadsheetId || '').trim();
+    if (!sheetId) {
+      res.status(400).json({
+        ok: false,
+        error: 'ID Google Spreadsheet belum terhubung di aplikasi.',
+        serviceAccount: getServiceAccountPublicStatus(),
+        state: buildPublicState(),
+      });
+      return;
+    }
+
+    try {
+      const saTabs = await pullAllTabsViaServiceAccount(sheetId);
+      const payload = parseRawTabMatricesToPayload(sheetId, {
+        driverAll: saTabs.Master_Driver || [],
+        vehicleAll: saTabs.Master_Armada || [],
+        routeAll: saTabs.Master_Rute || [],
+        fleetCardAll: saTabs.Master_Fleet_Card || [],
+        assignmentAll: saTabs.Surat_Tugas || [],
+        expenseAll: saTabs.Pengeluaran_Driver || [],
+        configAll: saTabs.Konfigurasi || [],
+        title: saTabs.title,
+      });
+      reconcilePulledSheetsIntoStore(payload);
+      await pushStateViaServiceAccountInternal();
+
+      const publicState = broadcastRealtime({
+        type: 'state:sync',
+        clientId: getRequestClientId(req),
+        actorRole: 'ADMIN',
+      });
+
+      res.json({
+        ok: true,
+        message: `Service Account aktif! Spreadsheet "${
+          saTabs.title || sheetId
+        }" berhasil dibaca & ditulis dua arah secara langsung.`,
+        serviceAccount: getServiceAccountPublicStatus(),
+        state: publicState,
+      });
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'Gagal mengakses Spreadsheet menggunakan Service Account.';
+      res.status(403).json({
+        ok: false,
+        error: msg,
+        serviceAccount: getServiceAccountPublicStatus(),
+        state: buildPublicState(),
+      });
+    }
+  });
 
   // Endpoint for immediate zero-click Spreadsheet reconciliation on F5 / Driver Portal refresh
   app.post('/api/sheets/auto-sync', async (req, res) => {
@@ -5977,12 +6346,39 @@ async function startServer() {
     }
 
     if (
-      (!store.lastSyncedAt || store.fleetCards.length === 0) &&
+      (!store.lastSyncedAt ||
+        store.fleetCards.length === 0 ||
+        store.assignments.length === 0) &&
       String(store.spreadsheetId || '').trim()
     ) {
       await enqueueSheetSync(() =>
         pullSpreadsheetFromServerAutoInternal({ pushPendingChanges: false })
       );
+    }
+
+    const driverAllTasks = store.assignments.filter(
+      (a) => String(a.driverId || '').trim().toUpperCase() === driverId
+    );
+    const driverActiveTasks = driverAllTasks.filter(
+      (a) =>
+        a.status === 'Menunggu Berangkat' ||
+        a.status === 'Dalam Perjalanan' ||
+        a.status === 'Delivered'
+    );
+
+    if (driverActiveTasks.length > 0) {
+      res.status(400).json({
+        error: `Masih terdapat ${driverActiveTasks.length} Surat Tugas aktif yang belum diselesaikan (Handover). Selesaikan seluruh Surat Tugas terlebih dahulu sebelum mengisi Form Input Pengeluaran.`,
+      });
+      return;
+    }
+
+    if (driverAllTasks.length === 0 && !completedAssignmentNos) {
+      res.status(400).json({
+        error:
+          'Form Input Pengeluaran tidak aktif karena belum ada Surat Tugas untuk Driver ini.',
+      });
+      return;
     }
 
     let matchedCardIdx = store.fleetCards.findIndex(

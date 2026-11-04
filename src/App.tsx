@@ -2867,6 +2867,7 @@ export default function App() {
     if (
       !token &&
       boundSheetId &&
+      !appStateRef.current.config.serviceAccountConfigured &&
       !appStateRef.current.config.appsScriptUrl &&
       (googleUserRef.current || hasBoundGoogleWorkspaceAccount())
     ) {
@@ -2975,6 +2976,80 @@ export default function App() {
       return false;
     }
 
+    const isSwitchingToDifferentSheet = Boolean(
+      appStateRef.current.config.spreadsheetId &&
+        appStateRef.current.config.spreadsheetId.trim() !== extractedId
+    );
+
+    if (
+      appStateRef.current.config.serviceAccountConfigured &&
+      !getAccessToken()
+    ) {
+      setIsSyncing(true);
+      try {
+        await safeApiFetch('/api/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            spreadsheetId: extractedId,
+            spreadsheetTitle: isSwitchingToDifferentSheet
+              ? ''
+              : appStateRef.current.config.spreadsheetTitle || '',
+            spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${extractedId}/edit`,
+            resetLocalCache: isSwitchingToDifferentSheet,
+          }),
+        });
+        const verifyRes = await safeApiFetch<{
+          ok?: boolean;
+          message?: string;
+          error?: string;
+          state?: AppStateResponse;
+        }>('/api/service-account/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Client-Id': REALTIME_CLIENT_ID,
+          },
+          body: JSON.stringify({}),
+        });
+        if (verifyRes.data?.state) {
+          applyIncomingState(verifyRes.data.state);
+        }
+        if (verifyRes.ok && verifyRes.data?.ok) {
+          persistPermanentSpreadsheetBinding({
+            spreadsheetId: extractedId,
+            spreadsheetTitle:
+              verifyRes.data.state?.config.spreadsheetTitle || '',
+            spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${extractedId}/edit`,
+            driveRootFolderId:
+              verifyRes.data.state?.config.driveRootFolderId,
+            driveRootFolderUrl:
+              verifyRes.data.state?.config.driveRootFolderUrl,
+            lastSyncedAt:
+              verifyRes.data.state?.config.lastSyncedAt ||
+              new Date().toISOString(),
+          });
+          addToast(
+            'success',
+            'Spreadsheet Terhubung via Service Account 24/7',
+            verifyRes.data.message ||
+              'Spreadsheet berhasil diikat dan disinkronkan dua arah.'
+          );
+          return true;
+        }
+        addToast(
+          'error',
+          'Periksa Izin Editor Service Account',
+          verifyRes.data?.error ||
+            verifyRes.errorMessage ||
+            'Pastikan email Service Account sudah dibagikan akses Editor di Google Spreadsheet.'
+        );
+        return false;
+      } finally {
+        setIsSyncing(false);
+      }
+    }
+
     const token = await ensureAdminInteractiveSheetsToken();
     if (!token) {
       addToast(
@@ -2984,11 +3059,6 @@ export default function App() {
       );
       return false;
     }
-
-    const isSwitchingToDifferentSheet = Boolean(
-      appStateRef.current.config.spreadsheetId &&
-        appStateRef.current.config.spreadsheetId.trim() !== extractedId
-    );
 
     // Pre-persist permanent binding immediately so it never drops
     persistPermanentSpreadsheetBinding({
@@ -3191,7 +3261,10 @@ export default function App() {
       if (hasGoogleToken) {
         setHasGoogleToken(false);
       }
-      if (nextState.config.appsScriptUrl) {
+      if (
+        nextState.config.appsScriptUrl ||
+        nextState.config.serviceAccountConfigured
+      ) {
         await safeApiFetch('/api/sheets/auto-sync', {
           method: 'POST',
           headers: { 'X-Client-Id': REALTIME_CLIENT_ID },

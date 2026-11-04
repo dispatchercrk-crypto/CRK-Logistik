@@ -229,7 +229,19 @@ export interface AppConfig {
     | 'AUTH_BLOCKED_HTML'
     | 'ERROR'
     | 'NONE';
-  serverSheetSyncMode?: 'APPS_SCRIPT_24_7' | 'LIVE_CSV_AND_OAUTH' | 'OAUTH_AUTO';
+  serviceAccountConfigured?: boolean;
+  serviceAccountEmail?: string;
+  serviceAccountStatus?:
+    | 'ACTIVE'
+    | 'NOT_CONFIGURED'
+    | 'PERMISSION_NEEDED'
+    | 'ERROR';
+  serviceAccountLastError?: string;
+  serverSheetSyncMode?:
+    | 'SERVICE_ACCOUNT_24_7'
+    | 'APPS_SCRIPT_24_7'
+    | 'LIVE_CSV_AND_OAUTH'
+    | 'OAUTH_AUTO';
   driveRootFolderId?: string;
   driveRootFolderUrl?: string;
   publicPortalBaseUrl?: string;
