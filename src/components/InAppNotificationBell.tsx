@@ -14,7 +14,7 @@ import {
   WhatsAppEventType,
   WhatsAppNotificationLog,
 } from '../types';
-import { formatRealTimeTimestamp } from '../utils/media';
+import { formatRealTimeTimestamp, parseFlexibleTimestamp } from '../utils/media';
 
 const ADMIN_READ_NOTIF_STORAGE_KEY = 'crk_admin_inapp_read_ids_v1';
 const DRIVER_READ_NOTIF_STORAGE_PREFIX = 'crk_driver_inapp_read_ids_v1_';
@@ -326,7 +326,7 @@ export const InAppNotificationBell: React.FC<InAppNotificationBellProps> = ({
       }`;
       coveredTaskStageKeys.add(stageKey);
 
-      const parsedMs = new Date(notif.timestamp).getTime();
+      const parsedMs = parseFlexibleTimestamp(notif.timestamp) ?? new Date(notif.timestamp).getTime();
       const timestampMs = Number.isFinite(parsedMs) ? parsedMs : 0;
       const actorRole: 'ADMIN' | 'DRIVER' | 'SYSTEM' =
         notif.actorRole ||
@@ -448,7 +448,7 @@ export const InAppNotificationBell: React.FC<InAppNotificationBellProps> = ({
         coveredTaskStageKeys.add(stageKey);
 
         const syntheticId = `ASG-EVT-${asg.id}-${m.eventType}`;
-        const parsedMs = new Date(m.timestamp).getTime();
+        const parsedMs = parseFlexibleTimestamp(m.timestamp) ?? new Date(m.timestamp).getTime();
         const timestampMs = Number.isFinite(parsedMs) ? parsedMs : 0;
 
         items.push({

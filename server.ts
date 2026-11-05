@@ -3857,8 +3857,8 @@ async function startServer() {
       const hr = Number(dmyMatch[4] || 0);
       const min = Number(dmyMatch[5] || 0);
       const sec = Number(dmyMatch[6] || 0);
-      const dt = new Date(year, month, day, hr, min, sec);
-      if (!Number.isNaN(dt.getTime())) ms = dt.getTime();
+      const utcMs = Date.UTC(year, month, day, hr - 7, min, sec);
+      if (Number.isFinite(utcMs)) ms = utcMs;
     }
     if (ms === null && !Number.isNaN(new Date(raw).getTime())) {
       ms = new Date(raw).getTime();

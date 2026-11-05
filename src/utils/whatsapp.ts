@@ -14,6 +14,7 @@ import {
   formatDurationMinutes,
   formatRealTimeTimestamp,
   formatWeightKg,
+  parseFlexibleTimestamp,
   parseSuratJalanList,
 } from './media';
 
@@ -465,7 +466,8 @@ export function shiftWibDateYmd(baseYmd: string, offsetDays: number): string {
 
 export function formatShortWibTime(isoOrDate?: string): string {
   if (!isoOrDate) return '-';
-  const d = new Date(isoOrDate);
+  const ms = parseFlexibleTimestamp(isoOrDate);
+  const d = ms !== null ? new Date(ms) : new Date(isoOrDate);
   if (Number.isNaN(d.getTime())) return String(isoOrDate);
   return `${d.toLocaleTimeString('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -491,9 +493,7 @@ export function formatReadableWibDate(dateYmd: string): string {
 }
 
 function parseTimestampMs(raw?: string): number | null {
-  if (!raw) return null;
-  const ms = new Date(raw).getTime();
-  return Number.isFinite(ms) ? ms : null;
+  return parseFlexibleTimestamp(raw);
 }
 
 export interface FleetStatusStageEntry {
@@ -928,9 +928,9 @@ export interface DailyOperationalSummary {
 
 function isoMatchesWibDate(iso: string | undefined, targetYmd: string): boolean {
   if (!iso) return false;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
-  return getWibTodayYmd(d) === targetYmd;
+  const ms = parseFlexibleTimestamp(iso);
+  if (ms === null) return false;
+  return getWibTodayYmd(new Date(ms)) === targetYmd;
 }
 
 export function computeDailyOperationalSummary(

@@ -41,29 +41,52 @@ export async function compressImageFile(
   });
 }
 
-export function parseFlexibleTimestamp(raw?: string): number | null {
+export function parseFlexibleTimestamp(raw?: string | null): number | null {
   const str = String(raw || '').trim();
-  if (!str || str === '-') return null;
+  if (!str || str === '-' || str === 'undefined' || str === 'null') return null;
 
-  // Handle DD-MM-YYYY;HH:mm:ss or DD/MM/YYYY;HH:mm:ss or DD-MM-YYYY HH:mm:ss
+  // 1. Check if already an ISO string with explicit timezone / Z: e.g. 2026-11-05T13:35:27.000Z or +07:00
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)) {
+    const ms = new Date(str).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  // 2. Format: DD-MM-YYYY or DD/MM/YYYY with optional time separated by ;, space, T, or comma
+  // e.g. 05-11-2026;20:35:27 or 05/11/2026, 20.35.27 or 05-11-2026 20:35:27
   const dmyMatch = str.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[,\s;]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
   );
   if (dmyMatch) {
     const day = Number(dmyMatch[1]);
     const month = Number(dmyMatch[2]) - 1;
     const year = Number(dmyMatch[3]);
-    const hr = Number(dmyMatch[4] || 0);
-    const min = Number(dmyMatch[5] || 0);
-    const sec = Number(dmyMatch[6] || 0);
-    const dt = new Date(year, month, day, hr, min, sec);
-    if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    const hr = Number(dmyMatch[4] ?? 0);
+    const min = Number(dmyMatch[5] ?? 0);
+    const sec = Number(dmyMatch[6] ?? 0);
+    // Interpreted as WIB (Asia/Jakarta, UTC+7) -> Date.UTC(year, month, day, hr - 7, min, sec)
+    const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+    return Number.isFinite(ms) ? ms : null;
   }
 
-  const direct = new Date(str).getTime();
-  if (!Number.isNaN(direct)) return direct;
+  // 3. Format: YYYY-MM-DD or YYYY/MM/DD with optional time
+  // e.g. 2026-11-05;20:35:27 or 2026-11-05 20:35:27 or 2026-11-05T20:35:27 (without trailing Z/offset)
+  const ymdMatch = str.match(
+    /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+  );
+  if (ymdMatch) {
+    const year = Number(ymdMatch[1]);
+    const month = Number(ymdMatch[2]) - 1;
+    const day = Number(ymdMatch[3]);
+    const hr = Number(ymdMatch[4] ?? 0);
+    const min = Number(ymdMatch[5] ?? 0);
+    const sec = Number(ymdMatch[6] ?? 0);
+    const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+    return Number.isFinite(ms) ? ms : null;
+  }
 
-  return null;
+  // Fallback: standard Date parsing
+  const fallback = new Date(str).getTime();
+  return Number.isFinite(fallback) ? fallback : null;
 }
 
 export function formatRealTimeTimestamp(dateOrIso: Date | string | null | undefined): string {
@@ -179,9 +202,9 @@ export function parseScheduledDeadlineMs(
     }
   }
 
-  const deadline = new Date(year, monthIdx, day, hours, minutes, seconds, 999);
-  if (Number.isNaN(deadline.getTime())) return null;
-  return deadline.getTime();
+  const deadlineMs = Date.UTC(year, monthIdx, day, hours - 7, minutes, seconds, 999);
+  if (!Number.isFinite(deadlineMs)) return null;
+  return deadlineMs;
 }
 
 export type OtdCategory =

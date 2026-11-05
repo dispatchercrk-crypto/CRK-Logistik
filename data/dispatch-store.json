@@ -8,7 +8,7 @@
   "liveCsvReadable": true,
   "driveRootFolderId": "1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
   "driveRootFolderUrl": "https://drive.google.com/drive/folders/1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
-  "lastSyncedAt": "2026-11-04T17:21:49.724Z",
+  "lastSyncedAt": "2026-11-05T13:50:42.794Z",
   "lastSyncedSpreadsheetId": "1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac",
   "syncedDriverIds": [
     "drv-001",
@@ -88,9 +88,18 @@
     "fc-004",
     "fc-005",
     "fc-006",
-    "fc-007"
+    "fc-007",
+    "fc-008",
+    "fc-009",
+    "fc-010",
+    "fc-011"
   ],
-  "syncedAssignmentNos": [],
+  "syncedAssignmentNos": [
+    "st-crk/2026/11/0001",
+    "st-crk/2026/11/0002",
+    "st-crk/2026/05/0004",
+    "st-crk/2026/05/0005"
+  ],
   "syncedExpenseIds": [],
   "unsyncedDriverIds": [],
   "unsyncedVehicleIds": [],
@@ -102,9 +111,7 @@
   "deletedTombstones": {
     "assignments": [
       "asg-1793692081847-1",
-      "st-crk/2026/11/0001",
       "asg-1793694785399-2",
-      "st-crk/2026/11/0002",
       "asg-1793341807277-1",
       "asg-1793343367383-2",
       "st-crk/2026/10/0001",
@@ -144,7 +151,7 @@
   "whatsappGroupInviteUrl": "https://chat.whatsapp.com/KAZTVJP9ET50OBTg9gNIy4?s=cl&p=a&mlu=4&ilr=4",
   "publicPortalBaseUrl": "",
   "letterPrefix": "ST-CRK",
-  "lastSequence": 0,
+  "lastSequence": 5,
   "needsMasterSheetSync": false,
   "drivers": [
     {
@@ -243,7 +250,7 @@
       "vehicleType": "CDD BOX HINO Freezer",
       "capacity": "5 Ton",
       "capacityCbm": "20 CBM",
-      "status": "Siap Jalan"
+      "status": "Dalam Tugas"
     },
     {
       "id": "UNT-003",
@@ -608,10 +615,181 @@
     {
       "id": "FC-007",
       "cardNumber": "0145-0084-0264-6417",
+      "balance": 682958
+    },
+    {
+      "id": "FC-008",
+      "cardNumber": "0145-0084-0217-5573",
+      "balance": 2000000
+    },
+    {
+      "id": "FC-009",
+      "cardNumber": "0145-0084-0244-0126",
+      "balance": 2000000
+    },
+    {
+      "id": "FC-010",
+      "cardNumber": "0145-0084-0244-0142",
+      "balance": 1500000
+    },
+    {
+      "id": "FC-011",
+      "cardNumber": "0145-0084-0217-5581",
       "balance": 2000000
     }
   ],
-  "assignments": [],
+  "assignments": [
+    {
+      "id": "ASG-1793824144692-1",
+      "sequenceNumber": 1,
+      "noPenugasan": "ST-CRK/2026/11/0001",
+      "noSuratJalanFisik": "WH/INT/",
+      "kodeSegel": "CRK.BGD.40195.",
+      "tanggalTugas": "05-11-2026;07:00:00",
+      "driverId": "DRV-004",
+      "driverName": "TOMMY HERDIAN",
+      "driverPhone": "089686481651",
+      "vehicleId": "UNT-001",
+      "plateNumber": "F 9088 FI",
+      "vehicleType": "CDD BOX MITSHUBISHI CANTER Freezer",
+      "originId": "",
+      "origin": "GUDANG PASIR IMPUN",
+      "routeId": "RT-013",
+      "destination": "MTP NAROGONG",
+      "purpose": "INBOUND MTP ( Target Suhu -5°C )",
+      "beratMuatan": "3 Ton",
+      "volumeCbm": "10.0 CBM",
+      "status": "Handover",
+      "deliveredAt": "05-11-2026;18:50:47",
+      "departureData": {
+        "timestamp": "05-11-2026;18:41:11",
+        "titikKeberangkatan": "GUDANG PASIR IMPUN",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 139720,
+        "suhuAwal": "12",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Terpasang"
+      },
+      "deliveredData": {
+        "timestamp": "05-11-2026;18:50:47",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 139863,
+        "suhuSampai": "4.5",
+        "bbmSampai": "3/4 Tangki",
+        "kondisiSampai": "Suhu & Segel Utuh - Lengkap",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "05-11-2026;20:27:32",
+        "kmAkhir": 139863,
+        "suhuAkhir": "4.5",
+        "bbmAkhir": "3/4 Tangki",
+        "penerimaNama": "Fajri",
+        "kondisiAkhir": "Suhu & Segel Utuh - Lengkap",
+        "catatanSerahTerima": "Barang sesuai"
+      },
+      "driveFolderUrl": "https://drive.google.com/drive/folders/1rOpysWwqC5K3ulQhtcn-xjOJBfeBB5Yd",
+      "driveMedia": {
+        "folderId": "1rOpysWwqC5K3ulQhtcn-xjOJBfeBB5Yd",
+        "folderUrl": "https://drive.google.com/drive/folders/1rOpysWwqC5K3ulQhtcn-xjOJBfeBB5Yd",
+        "fotoOdometerBerangkatUrl": "https://drive.google.com/file/d/1GhmcXMuJUdyUKLkIPf_SfqQg5pCOyCBB/view?usp=drivesdk",
+        "fotoSuhuBerangkatUrl": "https://drive.google.com/file/d/18YR7UnIyzZcO70a8REoe8UHLKUG7EpcA/view?usp=drivesdk",
+        "fotoOdometerSerahTerimaUrl": "https://drive.google.com/file/d/1K0kPpDLYc5_70d-q5CZl8ITG0J003L3t/view?usp=drivesdk",
+        "fotoSuhuSerahTerimaUrl": "https://drive.google.com/file/d/14qyrSwMgBGB8akdoC1qAWpDjDPSu1Cwz/view?usp=drivesdk",
+        "fotoBuktiSerahTerimaUrl": "https://drive.google.com/file/d/1malrnb8WNgNE8r8v-e7ooZgTd-ZULHA_/view?usp=drivesdk",
+        "tandaTanganPenerimaUrl": "https://drive.google.com/file/d/1K336TNq-pf-VC4dRtAeI4PMWX9m1H_p6/view?usp=drivesdk"
+      },
+      "notes": "Jangan Kupa Pakai Sepatu dan Berpakaian Rapi",
+      "createdAt": "06-11-2026;03:29:04",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1793865646259-2",
+      "sequenceNumber": 2,
+      "noPenugasan": "ST-CRK/2026/11/0002",
+      "noSuratJalanFisik": "MTP/OUTBOND",
+      "kodeSegel": "MTP.20261105.",
+      "tanggalTugas": "05-11-2026;07:00:00",
+      "driverId": "DRV-004",
+      "driverName": "TOMMY HERDIAN",
+      "driverPhone": "089686481651",
+      "vehicleId": "UNT-001",
+      "plateNumber": "F 9088 FI",
+      "vehicleType": "CDD BOX MITSHUBISHI CANTER Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-048",
+      "destination": "WH-CISIRUNG",
+      "purpose": "BUMBU BARBEQUE",
+      "beratMuatan": "2 Ton",
+      "volumeCbm": "5.76 CBM",
+      "status": "Menunggu Berangkat",
+      "notes": "OUTBOUND MTP to WH CISIRUNG",
+      "createdAt": "05-11-2026;15:00:46",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1793885377078-4",
+      "sequenceNumber": 4,
+      "noPenugasan": "ST-CRK/2026/05/0004",
+      "noSuratJalanFisik": "WH/INT/, WHC/INT/",
+      "kodeSegel": "CRK.BGO.40195.",
+      "tanggalTugas": "05-11-2026;20:29:37",
+      "driverId": "DRV-002",
+      "driverName": "EBI GUSTYANTO",
+      "driverPhone": "088802223475",
+      "vehicleId": "UNT-002",
+      "plateNumber": "F 9432 FH",
+      "vehicleType": "CDD BOX HINO Freezer",
+      "originId": "",
+      "origin": "GUDANG CISIRUNG",
+      "routeId": "RT-007",
+      "destination": "DC TEBET",
+      "purpose": "1.5 Ton",
+      "beratMuatan": "5.50 CBM",
+      "volumeCbm": "5.50 CBM",
+      "status": "Dalam Perjalanan",
+      "departureData": {
+        "timestamp": "05-11-2026;20:35:27",
+        "titikKeberangkatan": "GUDANG CISIRUNG",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 238590,
+        "suhuAwal": "7.5",
+        "bbmAwal": "Penuh (Full)",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "SEGEL"
+      },
+      "notes": "",
+      "createdAt": "05-11-2026;20:29:37",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1793885757826-5",
+      "sequenceNumber": 5,
+      "noPenugasan": "ST-CRK/2026/05/0005",
+      "noSuratJalanFisik": "WH/INT/",
+      "kodeSegel": "CRK.BDO.40195.",
+      "tanggalTugas": "05-11-2026;20:35:57",
+      "driverId": "DRV-003",
+      "driverName": "MUDI YANTO",
+      "driverPhone": "08988946116",
+      "vehicleId": "UNT-004",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "CDE BOX HINO Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-012",
+      "destination": "DC BOGOR",
+      "purpose": "FG",
+      "beratMuatan": "400 Kg",
+      "volumeCbm": "1.49 CBM",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "05-11-2026;20:35:57",
+      "needsSheetSync": false
+    }
+  ],
   "driverExpenses": [],
   "notifications": [],
   "appsScriptBridgeStatus": "ACTIVE"

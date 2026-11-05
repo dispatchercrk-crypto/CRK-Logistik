@@ -28,6 +28,7 @@ import {
   evaluateAssignmentOtd,
   formatDurationMinutes,
   formatRealTimeTimestamp,
+  parseFlexibleTimestamp,
 } from '../utils/media';
 
 export interface PortalBellNotificationItem {
@@ -71,8 +72,10 @@ interface NotificationBellProps {
 
 function parseTimestampMs(raw?: string | null): number {
   if (!raw) return 0;
-  const parsed = Date.parse(raw);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  const parsed = parseFlexibleTimestamp(raw);
+  if (parsed !== null) return parsed;
+  const fallback = Date.parse(raw);
+  return Number.isNaN(fallback) ? 0 : fallback;
 }
 
 function formatRelativeTimeId(timestampMs: number, nowMs: number): string {
