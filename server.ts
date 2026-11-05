@@ -3838,6 +3838,49 @@ async function startServer() {
     };
   };
 
+  const formatDatabaseTimestamp = (
+    dateOrIso?: Date | string | null
+  ): string => {
+    if (!dateOrIso) return '';
+    const raw = String(dateOrIso).trim();
+    if (!raw || raw === '-') return '';
+    if (/^\d{2}-\d{2}-\d{4};\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+
+    let ms: number | null = null;
+    const dmyMatch = raw.match(
+      /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[,\s;]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+    );
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const month = Number(dmyMatch[2]) - 1;
+      const year = Number(dmyMatch[3]);
+      const hr = Number(dmyMatch[4] || 0);
+      const min = Number(dmyMatch[5] || 0);
+      const sec = Number(dmyMatch[6] || 0);
+      const dt = new Date(year, month, day, hr, min, sec);
+      if (!Number.isNaN(dt.getTime())) ms = dt.getTime();
+    }
+    if (ms === null && !Number.isNaN(new Date(raw).getTime())) {
+      ms = new Date(raw).getTime();
+    }
+    if (ms === null || Number.isNaN(ms)) return raw;
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(ms));
+
+    const getPart = (type: string) =>
+      parts.find((p) => p.type === type)?.value || '00';
+    return `${getPart('day')}-${getPart('month')}-${getPart('year')};${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
+  };
+
   const buildAssignmentRowForSheetBridge = (a: AssignmentRecord): Array<string | number> => {
     const depMediaStatus = [
       a.driveMedia?.fotoOdometerBerangkatUrl
@@ -3887,7 +3930,7 @@ async function startServer() {
       a.noPenugasan,
       a.noSuratJalanFisik || '',
       a.kodeSegel || '',
-      a.tanggalTugas,
+      formatDatabaseTimestamp(a.tanggalTugas || a.createdAt),
       a.driverId,
       a.driverName,
       a.driverPhone,
@@ -3902,14 +3945,14 @@ async function startServer() {
       a.destination,
       a.purpose,
       a.status,
-      a.departureData?.timestamp || '',
+      formatDatabaseTimestamp(a.departureData?.timestamp),
       a.departureData?.kmAwal ?? '',
       a.departureData?.suhuAwal || '',
       a.departureData?.bbmAwal || '',
       a.departureData?.kondisiKendaraan || '',
       a.departureData?.catatanBerangkat || '',
       depMediaStatus,
-      a.handoverData?.timestamp || '',
+      formatDatabaseTimestamp(a.handoverData?.timestamp),
       a.handoverData?.kmAkhir ?? a.deliveredData?.kmSampai ?? '',
       a.handoverData?.suhuAkhir || a.deliveredData?.suhuSampai || '',
       a.handoverData?.bbmAkhir || a.deliveredData?.bbmSampai || '',
@@ -3920,7 +3963,7 @@ async function startServer() {
         '',
       hoMediaStatus,
       a.notes || '',
-      a.createdAt,
+      formatDatabaseTimestamp(a.createdAt),
       a.jadwalJamTiba || '',
       a.beratMuatan || '',
       a.driveMedia?.folderUrl || a.driveFolderUrl || '',
@@ -3930,7 +3973,7 @@ async function startServer() {
       a.driveMedia?.fotoSuhuSerahTerimaUrl || '',
       a.driveMedia?.fotoBuktiSerahTerimaUrl || '',
       a.driveMedia?.tandaTanganPenerimaUrl || '',
-      a.deliveredAt || a.deliveredData?.timestamp || '',
+      formatDatabaseTimestamp(a.deliveredAt || a.deliveredData?.timestamp),
       a.volumeCbm || '',
     ];
   };
@@ -4194,8 +4237,8 @@ async function startServer() {
       assignmentsRows: sortedAssignments.map(buildAssignmentRowForSheetBridge),
       driverExpensesRows: sortedExpenses.map((e) => [
         e.id,
-        e.timestamp,
-        e.tanggal,
+        formatDatabaseTimestamp(e.timestamp),
+        formatDatabaseTimestamp(e.tanggal),
         e.driverId,
         e.driverName,
         e.plateNumber || '',
@@ -4216,7 +4259,7 @@ async function startServer() {
           )
         ),
         e.catatan || '',
-        e.tanggalPengiriman || e.tanggal || '',
+        formatDatabaseTimestamp(e.tanggalPengiriman || e.tanggal),
         e.tujuanPengiriman || '',
       ]),
       configRows: [
@@ -6458,22 +6501,10 @@ async function startServer() {
       }
     }
 
-    const rawClientTimestamp = String(req.body?.timestamp || '').trim();
-    const parsedClientDate = rawClientTimestamp
-      ? new Date(rawClientTimestamp)
-      : null;
-    const now =
-      parsedClientDate && !Number.isNaN(parsedClientDate.getTime())
-        ? parsedClientDate
-        : new Date();
-    const nowIso = now.toISOString();
-    const wibDateParts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Jakarta',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(now);
-    const effectiveTanggalPengiriman = rawTanggalPengiriman || wibDateParts;
+    const realTimeNow = formatDatabaseTimestamp(new Date());
+    const effectiveTanggalPengiriman = formatDatabaseTimestamp(
+      rawTanggalPengiriman || new Date()
+    );
     const totalPengeluaran = totalPengirimanBbm + totalPengeluaranTol;
 
     if (matchedCardIdx >= 0) {
@@ -6491,8 +6522,8 @@ async function startServer() {
       id:
         requestedExpenseId ||
         `EXP-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-      timestamp: nowIso,
-      tanggal: wibDateParts,
+      timestamp: realTimeNow,
+      tanggal: realTimeNow,
       tanggalPengiriman: effectiveTanggalPengiriman,
       tujuanPengiriman: tujuanPengiriman || undefined,
       driverId,
@@ -6727,8 +6758,12 @@ async function startServer() {
     }
 
     const nextSeq = computeNextSequence(store);
+    const clickNow = new Date();
+    const realTimeFormatted = formatDatabaseTimestamp(clickNow);
     const dateVal = String(
-      tanggalTugas || new Date().toISOString().slice(0, 10)
+      tanggalTugas && tanggalTugas.trim()
+        ? formatDatabaseTimestamp(tanggalTugas)
+        : realTimeFormatted
     ).trim();
     const sequentialNo = formatSequentialNo(store.letterPrefix, nextSeq, dateVal);
     const jamTibaClean = String(jadwalJamTiba || '').trim();
@@ -6747,8 +6782,8 @@ async function startServer() {
       noPenugasan: sequentialNo,
       noSuratJalanFisik: String(noSuratJalanFisik || '').trim(),
       kodeSegel: String(kodeSegel || '').trim().toUpperCase(),
-      createdAt: new Date().toISOString(),
-      tanggalTugas: dateVal,
+      createdAt: realTimeFormatted,
+      tanggalTugas: realTimeFormatted,
       jadwalJamTiba: jamTibaClean || undefined,
       driverId: String(driverId).trim(),
       driverName: String(driverName).trim(),
@@ -7199,7 +7234,7 @@ async function startServer() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
+    const realTimeNow = formatDatabaseTimestamp(new Date());
     assignment.driverPhone = resolveDriverPhone(
       assignment.driverId,
       assignment.driverPhone
@@ -7207,7 +7242,7 @@ async function startServer() {
     assignment.origin = titikKeberangkatan;
     assignment.status = 'Dalam Perjalanan';
     assignment.departureData = {
-      timestamp: nowIso,
+      timestamp: realTimeNow,
       titikKeberangkatan,
       jenisKendaraan,
       kmAwal,
@@ -7385,19 +7420,19 @@ async function startServer() {
         ).trim()
       : '';
 
-    const nowIso = new Date().toISOString();
+    const realTimeNow = formatDatabaseTimestamp(new Date());
 
     assignment.driverPhone = resolveDriverPhone(
       assignment.driverId,
       assignment.driverPhone
     );
     assignment.status = 'Delivered';
-    assignment.deliveredAt = nowIso;
+    assignment.deliveredAt = realTimeNow;
     if (assignment.departureData && !assignment.departureData.jenisKendaraan) {
       assignment.departureData.jenisKendaraan = effectiveJenisKendaraan;
     }
     assignment.deliveredData = {
-      timestamp: nowIso,
+      timestamp: realTimeNow,
       jenisKendaraan: effectiveJenisKendaraan,
       kmSampai,
       suhuSampai,
@@ -7568,20 +7603,20 @@ async function startServer() {
       return;
     }
 
-    const nowIso = new Date().toISOString();
+    const realTimeNow = formatDatabaseTimestamp(new Date());
     assignment.driverPhone = resolveDriverPhone(
-      assignment.driverId,
-      assignment.driverPhone
+       assignment.driverId,
+       assignment.driverPhone
     );
     assignment.status = 'Handover';
     if (!assignment.deliveredAt) {
-      assignment.deliveredAt = assignment.deliveredData?.timestamp || nowIso;
+      assignment.deliveredAt = assignment.deliveredData?.timestamp || realTimeNow;
     }
     if (assignment.departureData && !assignment.departureData.jenisKendaraan) {
       assignment.departureData.jenisKendaraan = effectiveJenisKendaraan;
     }
     assignment.handoverData = {
-      timestamp: nowIso,
+      timestamp: realTimeNow,
       kmAkhir,
       suhuAkhir,
       bbmAkhir,

@@ -19,6 +19,7 @@ import {
   Image as ImageIcon,
   KeyRound,
   Link2,
+  Lock,
   LogOut,
   Menu,
   MessageSquare,
@@ -76,6 +77,7 @@ import {
   evaluateAssignmentLoadUtilization,
   evaluateAssignmentOtd,
   formatCbmValue,
+  formatDatabaseTimestamp,
   formatDurationMinutes,
   formatRealTimeTimestamp,
   parseCbmNumeric,
@@ -521,6 +523,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [creatingSubmitting, setCreatingSubmitting] = useState<boolean>(false);
   const [lastCreatedNotification, setLastCreatedNotification] =
     useState<WhatsAppNotificationLog | null>(null);
+  const [liveNow, setLiveNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setLiveNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [suratJalanList, setSuratJalanList] = useState<string[]>(['']);
 
   const [asgForm, setAsgForm] = useState({
@@ -6825,8 +6833,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   // Requirement #3: 1-Click Terbitkan Surat Tugas -> directly save & open WhatsApp
                   setCreatingSubmitting(true);
                   try {
+                    const clickTime = new Date();
+                    const lockedTimeStr = formatDatabaseTimestamp(clickTime);
                     const notif = await onCreateAssignment(
-                      payloadForm,
+                      {
+                        ...payloadForm,
+                        tanggalTugas: lockedTimeStr,
+                        createdAt: lockedTimeStr,
+                      },
                       createWaMode
                     );
                     if (notif) {
@@ -6841,20 +6855,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Tanggal Penugasan *
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                      <Lock className="h-3.5 w-3.5 text-emerald-700" />
+                      <span>Tanggal &amp; Waktu Terbit *</span>
                     </label>
-                    <input
-                      type="date"
-                      required
-                      value={asgForm.tanggalTugas}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setAsgForm((p) => ({ ...p, tanggalTugas: val }));
-                        if (!editingAssignment) fetchNextSequentialPreview(val);
-                      }}
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
-                    />
+                    {editingAssignment ? (
+                      <input
+                        type="text"
+                        required
+                        value={asgForm.tanggalTugas}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAsgForm((p) => ({ ...p, tanggalTugas: val }));
+                        }}
+                        className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                      />
+                    ) : (
+                      <div className="mt-1.5 flex min-h-[42px] items-center justify-between rounded-lg border border-emerald-300 bg-emerald-50/70 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+                          <span className="font-mono text-xs font-bold text-slate-900 tabular-nums">
+                            {formatRealTimeTimestamp(liveNow)}
+                          </span>
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800">
+                          <Lock className="h-3 w-3" />
+                          Terkunci Real-Time
+                        </span>
+                      </div>
+                    )}
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {editingAssignment
+                        ? 'Waktu penerbitan Surat Tugas.'
+                        : 'Tanggal & waktu dikunci otomatis saat tombol "Terbitkan Surat Tugas" diklik.'}
+                    </p>
                   </div>
 
                   <div>

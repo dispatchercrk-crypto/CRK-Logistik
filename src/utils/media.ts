@@ -41,30 +41,13 @@ export async function compressImageFile(
   });
 }
 
-export function formatRealTimeTimestamp(dateOrIso: Date | string): string {
-  const d = typeof dateOrIso === 'string' ? new Date(dateOrIso) : dateOrIso;
-  if (Number.isNaN(d.getTime())) return String(dateOrIso || '-');
-  return `${d.toLocaleString('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })} WIB`;
-}
-
 export function parseFlexibleTimestamp(raw?: string): number | null {
   const str = String(raw || '').trim();
-  if (!str) return null;
+  if (!str || str === '-') return null;
 
-  const direct = new Date(str).getTime();
-  if (!Number.isNaN(direct)) return direct;
-
-  // Handle DD/MM/YYYY or DD-MM-YYYY optional HH:mm(:ss)
+  // Handle DD-MM-YYYY;HH:mm:ss or DD/MM/YYYY;HH:mm:ss or DD-MM-YYYY HH:mm:ss
   const dmyMatch = str.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[,\s]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[,\s;]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
   );
   if (dmyMatch) {
     const day = Number(dmyMatch[1]);
@@ -77,7 +60,78 @@ export function parseFlexibleTimestamp(raw?: string): number | null {
     if (!Number.isNaN(dt.getTime())) return dt.getTime();
   }
 
+  const direct = new Date(str).getTime();
+  if (!Number.isNaN(direct)) return direct;
+
   return null;
+}
+
+export function formatRealTimeTimestamp(dateOrIso: Date | string | null | undefined): string {
+  if (!dateOrIso) return '-';
+  let d: Date;
+  if (dateOrIso instanceof Date) {
+    d = dateOrIso;
+  } else {
+    const ms = parseFlexibleTimestamp(dateOrIso);
+    d = ms !== null ? new Date(ms) : new Date(dateOrIso);
+  }
+  if (Number.isNaN(d.getTime())) return String(dateOrIso || '-');
+  return `${d.toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })} WIB`;
+}
+
+/**
+ * Format timestamp database & spreadsheet: Tanggal-Bulan-Tahun;Jam: Menit: Detik
+ * Contoh: 05-11-2026;20:07:53 (WIB / Asia/Jakarta)
+ */
+export function formatDatabaseTimestamp(
+  dateOrIso?: Date | string | null
+): string {
+  if (!dateOrIso) return '';
+  const raw = String(dateOrIso).trim();
+  if (!raw || raw === '-') return '';
+
+  if (/^\d{2}-\d{2}-\d{4};\d{2}:\d{2}:\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  let ms = parseFlexibleTimestamp(raw);
+  if (ms === null && !Number.isNaN(new Date(raw).getTime())) {
+    ms = new Date(raw).getTime();
+  }
+  if (ms === null || Number.isNaN(ms)) {
+    return raw;
+  }
+
+  const d = new Date(ms);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+
+  const getPart = (type: string) =>
+    parts.find((p) => p.type === type)?.value || '00';
+  const day = getPart('day');
+  const month = getPart('month');
+  const year = getPart('year');
+  const hour = getPart('hour');
+  const minute = getPart('minute');
+  const second = getPart('second');
+
+  return `${day}-${month}-${year};${hour}:${minute}:${second}`;
 }
 
 export function parseScheduledDeadlineMs(

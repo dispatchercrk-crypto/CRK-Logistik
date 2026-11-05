@@ -14,12 +14,14 @@ import {
   History,
   Image as ImageIcon,
   Link2,
+  Lock,
   LogOut,
   MapPin,
   MessageSquareShare,
   Navigation,
   PackageCheck,
   Phone,
+  Plus,
   Receipt,
   RefreshCw,
   Send,
@@ -27,6 +29,7 @@ import {
   SlidersHorizontal,
   Snowflake,
   Thermometer,
+  Trash2,
   Truck,
   Users,
   Wifi,
@@ -49,6 +52,7 @@ import {
   isCompletedTaskStatus,
 } from '../types';
 import {
+  formatDatabaseTimestamp,
   formatRealTimeTimestamp,
   parseSuratJalanList,
 } from '../utils/media';
@@ -584,10 +588,40 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
   );
   const [expenseTanggalPengiriman, setExpenseTanggalPengiriman] =
     useState<string>(() => todayWibDateStr);
+  const [expenseTujuanList, setExpenseTujuanList] = useState<string[]>(['']);
   const [expenseTujuanPengiriman, setExpenseTujuanPengiriman] =
     useState<string>('');
   const [tujuanManuallyEdited, setTujuanManuallyEdited] =
     useState<boolean>(false);
+
+  const handleAddTujuanRow = () => {
+    setTujuanManuallyEdited(true);
+    setExpenseTujuanList((prev) => [...prev, '']);
+  };
+
+  const handleUpdateTujuanRow = (index: number, val: string) => {
+    setTujuanManuallyEdited(true);
+    setExpenseTujuanList((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      const joined = next.map((t) => t.trim()).filter(Boolean).join(', ');
+      setExpenseTujuanPengiriman(joined);
+      return next;
+    });
+    setExpenseValidationErr('');
+  };
+
+  const handleRemoveTujuanRow = (index: number) => {
+    setTujuanManuallyEdited(true);
+    setExpenseTujuanList((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      const resolved = next.length > 0 ? next : [''];
+      const joined = resolved.map((t) => t.trim()).filter(Boolean).join(', ');
+      setExpenseTujuanPengiriman(joined);
+      return resolved;
+    });
+  };
+
   const [expensePlateNumber, setExpensePlateNumber] = useState<string>('');
   const [totalPengirimanBbmInput, setTotalPengirimanBbmInput] =
     useState<string>('');
@@ -646,6 +680,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       )
     );
     if (completedDestinations.length > 0) {
+      setExpenseTujuanList(completedDestinations);
       setExpenseTujuanPengiriman(completedDestinations.join(', '));
     }
   }, [relevantCompletedTasks, tujuanManuallyEdited, expenseTujuanPengiriman]);
@@ -725,9 +760,11 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       return;
     }
 
-    const cleanTujuanPengiriman = expenseTujuanPengiriman.trim();
+    const cleanTujuanPengiriman =
+      expenseTujuanList.map((t) => t.trim()).filter(Boolean).join(', ') ||
+      expenseTujuanPengiriman.trim();
     if (!cleanTujuanPengiriman) {
-      setExpenseValidationErr('Tujuan Pengiriman wajib diisi atau dipilih.');
+      setExpenseValidationErr('Minimal 1 Tujuan Pengiriman wajib diisi atau dipilih.');
       return;
     }
 
@@ -1416,7 +1453,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
     setSubmitting(true);
     try {
-      const nowIso = new Date().toISOString();
+      const clickTime = new Date();
+      const nowLocked = formatDatabaseTimestamp(clickTime);
       const departurePayload: DriverDepartureSubmitPayload = {
         titikKeberangkatan: titikKeberangkatan.trim(),
         jenisKendaraan,
@@ -1437,7 +1475,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         origin: departurePayload.titikKeberangkatan,
         status: TaskStatus.DALAM_PERJALANAN,
         departureData: {
-          timestamp: nowIso,
+          timestamp: nowLocked,
           titikKeberangkatan: departurePayload.titikKeberangkatan,
           jenisKendaraan: departurePayload.jenisKendaraan,
           kmAwal: departurePayload.kmAwal,
@@ -1544,7 +1582,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
     setSubmitting(true);
     try {
-      const nowIso = new Date().toISOString();
+      const clickTime = new Date();
+      const nowLocked = formatDatabaseTimestamp(clickTime);
       const deliveredPayload: DriverDeliveredSubmitPayload = {
         jenisKendaraan: effectiveDeliveredJenis,
         kmSampai: Number(kmSampai) || 0,
@@ -1560,9 +1599,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         ...task,
         driverCode: task.driverCode || driver.id || task.driverId,
         status: TaskStatus.DELIVERED,
-        deliveredAt: nowIso,
+        deliveredAt: nowLocked,
         deliveredData: {
-          timestamp: nowIso,
+          timestamp: nowLocked,
           jenisKendaraan: deliveredPayload.jenisKendaraan || effectiveDeliveredJenis,
           kmSampai: deliveredPayload.kmSampai,
           suhuSampai: deliveredPayload.suhuSampai,
@@ -1660,7 +1699,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
     setSubmitting(true);
     try {
-      const nowIso = new Date().toISOString();
+      const clickTime = new Date();
+      const nowLocked = formatDatabaseTimestamp(clickTime);
       const handoverPayload: DriverHandoverSubmitPayload = {
         jenisKendaraan: effectiveHandoverJenis,
         kmAkhir: inheritedKmAkhir,
@@ -1680,9 +1720,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         driverCode: task.driverCode || driver.id || task.driverId,
         status: TaskStatus.HANDOVER,
         deliveredAt:
-          task.deliveredAt || task.deliveredData?.timestamp || nowIso,
+          task.deliveredAt || task.deliveredData?.timestamp || nowLocked,
         handoverData: {
-          timestamp: nowIso,
+          timestamp: nowLocked,
           kmAkhir: handoverPayload.kmAkhir,
           suhuAkhir: handoverPayload.suhuAkhir,
           bbmAkhir: handoverPayload.bbmAkhir,
@@ -3221,9 +3261,10 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                             Formulir Keberangkatan Rantai Pengiriman Dingin
                           </h3>
                           <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                            <Lock className="h-3.5 w-3.5 text-emerald-700" />
                             <Clock className="h-3.5 w-3.5 text-sky-700" />
                             <span>
-                              Timestamp Real-Time:{' '}
+                              Waktu Keberangkatan Terkunci:{' '}
                               {formatRealTimeTimestamp(liveNow)}
                             </span>
                           </div>
@@ -3512,7 +3553,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               <span className="truncate">
                                 {submitting
                                   ? 'Menyimpan...'
-                                  : 'Simpan & Kirim WA'}
+                                  : 'Simpan dan Kirim Keberangkatan'}
                               </span>
                             </button>
                           </div>
@@ -3533,9 +3574,10 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                             Form Input Delivered (Sampai di Tujuan)
                           </h3>
                           <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
-                            <Clock className="h-3.5 w-3.5 text-indigo-700" />
+                            <Lock className="h-3.5 w-3.5 text-indigo-700" />
+                            <Clock className="h-3.5 w-3.5 text-sky-700" />
                             <span>
-                              Timestamp Real-Time:{' '}
+                              Waktu Sampai Terkunci:{' '}
                               {formatRealTimeTimestamp(liveNow)}
                             </span>
                           </div>
@@ -3836,7 +3878,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               <span className="truncate">
                                 {submitting
                                   ? 'Menyimpan...'
-                                  : 'Simpan Delivered & Kirim WA'}
+                                  : 'Simpan Deliveri Sampai'}
                               </span>
                             </button>
                           </div>
@@ -3857,9 +3899,10 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                             Formulir Berita Acara Serah Terima (Selesai Handover)
                           </h3>
                           <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                            <Lock className="h-3.5 w-3.5 text-emerald-700" />
                             <Clock className="h-3.5 w-3.5 text-emerald-700" />
                             <span>
-                              Timestamp Real-Time:{' '}
+                              Waktu Serah Terima Terkunci:{' '}
                               {formatRealTimeTimestamp(liveNow)}
                             </span>
                           </div>
@@ -4555,57 +4598,94 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     </div>
 
                     <div>
-                      <label
-                        htmlFor="driver-expense-tujuan-pengiriman"
-                        className="block text-xs font-bold text-slate-800"
-                      >
-                        Tujuan Pengiriman{' '}
-                        <span className="text-rose-600">*</span>
-                      </label>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-xs font-bold text-slate-800">
+                          Tujuan Pengiriman <span className="text-rose-600">*</span>
+                        </label>
+                        <span className="text-[11px] font-medium text-slate-500">
+                          {expenseTujuanList.filter((t) => t.trim()).length > 0
+                            ? `${expenseTujuanList.filter((t) => t.trim()).length} Tujuan Terisi`
+                            : 'Bisa tambah lebih dari 1 tujuan'}
+                        </span>
+                      </div>
+
+                      {/* Quick picker dropdown to quickly add from Master Rute or Tugas Selesai */}
                       {destinationQuickOptions.length > 0 && (
-                        <select
-                          aria-label="Pilih cepat Tujuan Pengiriman dari Master Rute atau Tugas Hari Ini"
-                          value={
-                            destinationQuickOptions.includes(
-                              expenseTujuanPengiriman.trim()
-                            )
-                              ? expenseTujuanPengiriman.trim()
-                              : ''
-                          }
-                          onChange={(e) => {
-                            if (!e.target.value) return;
-                            setTujuanManuallyEdited(true);
-                            setExpenseTujuanPengiriman(e.target.value);
-                            setExpenseValidationErr('');
-                          }}
-                          className="mt-1.5 w-full min-h-[42px] rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 focus:border-slate-900 focus:outline-none"
-                        >
-                          <option value="">
-                            -- Pilih Cepat dari Rute / Tujuan Tugas --
-                          </option>
-                          {destinationQuickOptions.map((dest) => (
-                            <option key={dest} value={dest}>
-                              {dest}
+                        <div className="mt-1.5">
+                          <select
+                            aria-label="Pilih cepat Tujuan Pengiriman dari Master Rute atau Tugas Hari Ini"
+                            value=""
+                            onChange={(e) => {
+                              const picked = e.target.value;
+                              if (!picked) return;
+                              setTujuanManuallyEdited(true);
+                              setExpenseTujuanList((prev) => {
+                                let next: string[];
+                                if (prev.length === 1 && !prev[0].trim()) {
+                                  next = [picked];
+                                } else if (!prev.includes(picked)) {
+                                  next = [...prev, picked];
+                                } else {
+                                  next = prev;
+                                }
+                                const joined = next.map((t) => t.trim()).filter(Boolean).join(', ');
+                                setExpenseTujuanPengiriman(joined);
+                                return next;
+                              });
+                              setExpenseValidationErr('');
+                            }}
+                            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 focus:border-slate-900 focus:outline-none"
+                          >
+                            <option value="">
+                              + Pilih Cepat dari Daftar Rute / Tugas Selesai...
                             </option>
-                          ))}
-                        </select>
+                            {destinationQuickOptions.map((dest) => (
+                              <option key={dest} value={dest}>
+                                {dest}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       )}
-                      <input
-                        id="driver-expense-tujuan-pengiriman"
-                        type="text"
-                        required
-                        maxLength={240}
-                        value={expenseTujuanPengiriman}
-                        onChange={(e) => {
-                          setTujuanManuallyEdited(true);
-                          setExpenseTujuanPengiriman(e.target.value);
-                          setExpenseValidationErr('');
-                        }}
-                        placeholder="Contoh: DC Cikarang, Gudang Bekasi"
-                        className={`${
-                          destinationQuickOptions.length > 0 ? 'mt-2' : 'mt-1.5'
-                        } w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-slate-900 focus:outline-none`}
-                      />
+
+                      {/* Multi-destination dynamic inputs */}
+                      <div className="mt-2 space-y-2">
+                        {expenseTujuanList.map((tujuanItem, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                type="text"
+                                required={idx === 0}
+                                maxLength={240}
+                                value={tujuanItem}
+                                onChange={(e) => handleUpdateTujuanRow(idx, e.target.value)}
+                                placeholder={`Tujuan Pengiriman ${idx + 1} (contoh: Gudang DC Cibitung)`}
+                                className="w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
+                              />
+                            </div>
+                            {expenseTujuanList.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTujuanRow(idx)}
+                                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                                title={`Hapus Tujuan ${idx + 1}`}
+                                aria-label={`Hapus Tujuan Pengiriman ${idx + 1}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddTujuanRow}
+                        className="mt-2.5 inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-dashed border-sky-400 bg-sky-50/60 px-3.5 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100 hover:text-sky-900 transition-colors"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Tambah Kolom Tujuan Pengiriman
+                      </button>
                     </div>
                   </div>
 
