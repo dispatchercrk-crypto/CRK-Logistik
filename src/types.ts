@@ -166,6 +166,7 @@ export interface Assignment {
   createdAt: string;
   tanggalTugas: string;
   jadwalJamTiba?: string; // Optional HH:mm target SLA on tanggalTugas
+  slaDurationMinutes?: number; // Batas Waktu Standar SLA Countdown (Default: 210 menit / 3.5 Jam)
   deliveredAt?: string;
   driverId: string;
   driverCode?: string;

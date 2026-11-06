@@ -72,6 +72,7 @@ import {
   stripDriverLinkFromWaMessage,
 } from '../utils/whatsapp';
 import {
+  DEFAULT_SLA_DURATION_MINUTES,
   calculateBoxCbmFromCm,
   evaluateActiveUnitsCbmSummary,
   evaluateAssignmentLoadUtilization,
@@ -534,6 +535,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [asgForm, setAsgForm] = useState({
     tanggalTugas: new Date().toISOString().slice(0, 10),
     jadwalJamTiba: '',
+    slaDurationMinutes: DEFAULT_SLA_DURATION_MINUTES,
     noSuratJalanFisik: '',
     kodeSegel: '',
     driverId: '',
@@ -563,6 +565,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [boxWidthCm, setBoxWidthCm] = useState<string>('');
   const [boxHeightCm, setBoxHeightCm] = useState<string>('');
   const [boxKoliCount, setBoxKoliCount] = useState<string>('1');
+  const [boxUnit, setBoxUnit] = useState<'cm' | 'm'>('cm');
 
   // Master Data States
   const [masterTab, setMasterTab] = useState<MasterSubTab>('drivers');
@@ -829,12 +832,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   const computedBoxCbm = useMemo(() => {
     return calculateBoxCbmFromCm(
-      Number(boxLengthCm),
-      Number(boxWidthCm),
-      Number(boxHeightCm),
-      Number(boxKoliCount || 1)
+      boxLengthCm,
+      boxWidthCm,
+      boxHeightCm,
+      boxKoliCount || 1,
+      boxUnit
     );
-  }, [boxLengthCm, boxWidthCm, boxHeightCm, boxKoliCount]);
+  }, [boxLengthCm, boxWidthCm, boxHeightCm, boxKoliCount, boxUnit]);
 
   const liveUnitCbmPreview = useMemo(() => {
     const cleanPlate = asgForm.plateNumber.trim().replace(/\s+/g, '').toLowerCase();
@@ -980,9 +984,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setBoxWidthCm('');
     setBoxHeightCm('');
     setBoxKoliCount('1');
+    setBoxUnit('cm');
     setAsgForm({
       tanggalTugas: today,
       jadwalJamTiba: '',
+      slaDurationMinutes: DEFAULT_SLA_DURATION_MINUTES,
       noSuratJalanFisik: '',
       kodeSegel: '',
       driverId: '',
@@ -1021,6 +1027,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setAsgForm({
       tanggalTugas: asg.tanggalTugas,
       jadwalJamTiba: asg.jadwalJamTiba || '',
+      slaDurationMinutes:
+        typeof asg.slaDurationMinutes === 'number' && asg.slaDurationMinutes > 0
+          ? asg.slaDurationMinutes
+          : DEFAULT_SLA_DURATION_MINUTES,
       noSuratJalanFisik: asg.noSuratJalanFisik || '',
       kodeSegel: asg.kodeSegel || '',
       driverId: asg.driverId,
@@ -6908,6 +6918,55 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     />
                   </div>
 
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Batas Standar SLA Countdown *
+                      </label>
+                      <span className="font-mono text-[11px] text-sky-700 font-semibold tabular-nums">
+                        {formatDurationMinutes(asgForm.slaDurationMinutes)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="15"
+                        max="1440"
+                        step="5"
+                        value={asgForm.slaDurationMinutes}
+                        onChange={(e) => {
+                          const val = Math.max(15, Number(e.target.value) || DEFAULT_SLA_DURATION_MINUTES);
+                          setAsgForm((p) => ({ ...p, slaDurationMinutes: val }));
+                        }}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                      />
+                      <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                        Menit
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {[180, 210, 240, 300].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() =>
+                            setAsgForm((p) => ({
+                              ...p,
+                              slaDurationMinutes: preset,
+                            }))
+                          }
+                          className={`rounded px-2 py-0.5 text-[11px] font-mono tabular-nums transition-colors ${
+                            asgForm.slaDurationMinutes === preset
+                              ? 'bg-slate-900 text-white font-semibold'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {preset} mnt
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {editingAssignment && (
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-semibold text-slate-700">
@@ -7270,18 +7329,50 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-center">
-                      <input
-                        type="text"
-                        value={asgForm.volumeCbm}
-                        onChange={(e) =>
-                          setAsgForm((p) => ({
-                            ...p,
-                            volumeCbm: e.target.value,
-                          }))
-                        }
-                        placeholder="Contoh: 12.5 CBM"
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
-                      />
+                      <div>
+                        <input
+                          type="text"
+                          value={asgForm.volumeCbm}
+                          onChange={(e) =>
+                            setAsgForm((p) => ({
+                              ...p,
+                              volumeCbm: e.target.value,
+                            }))
+                          }
+                          placeholder="Contoh: 12.5 CBM atau 60x40x35 x 100"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                        />
+                        {/* Auto-Detection Badge if user typed raw dimensions or liters */}
+                        {(() => {
+                          const parsed = parseCbmNumeric(asgForm.volumeCbm);
+                          const isDirectNumber = /^\d+(?:[.,]\d+)?\s*(?:cbm)?$/i.test(
+                            asgForm.volumeCbm.trim()
+                          );
+                          if (parsed !== null && parsed > 0 && !isDirectNumber) {
+                            return (
+                              <div className="mt-1 flex items-center justify-between gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">
+                                <span>
+                                  Terdeteksi:{' '}
+                                  <strong>{formatCbmValue(parsed)}</strong>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAsgForm((p) => ({
+                                      ...p,
+                                      volumeCbm: formatCbmValue(parsed),
+                                    }))
+                                  }
+                                  className="font-semibold underline hover:text-emerald-900"
+                                >
+                                  Terapkan Angka
+                                </button>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
 
                       {(liveUnitCbmPreview.matchedVeh ||
                         liveUnitCbmPreview.projectedTotalCbm > 0) && (
@@ -7336,13 +7427,94 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                     {cbmCalcOpen && (
                       <div className="rounded-lg border border-sky-200 bg-white p-3 space-y-2.5">
-                        <p className="text-[11px] font-semibold text-slate-700">
-                          Hitung Kubikasi Koli: (Panjang × Lebar × Tinggi cm × Jumlah Koli) ÷ 1.000.000
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                          <p className="text-[11px] font-semibold text-slate-700">
+                            Kalkulator Kubikasi (P × L × T × Koli):
+                          </p>
+                          {/* Unit Selector Toggle (cm vs m) */}
+                          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => setBoxUnit('cm')}
+                              className={`rounded-md px-2.5 py-0.5 font-medium transition-colors ${
+                                boxUnit === 'cm'
+                                  ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              Centimeter (cm)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBoxUnit('m')}
+                              className={`rounded-md px-2.5 py-0.5 font-medium transition-colors ${
+                                boxUnit === 'm'
+                                  ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                  : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              Meter (m)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span className="text-slate-500">Preset Cepat:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBoxUnit('cm');
+                              setBoxLengthCm('30');
+                              setBoxWidthCm('20');
+                              setBoxHeightCm('20');
+                            }}
+                            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                          >
+                            Box S (30×20×20 cm)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBoxUnit('cm');
+                              setBoxLengthCm('40');
+                              setBoxWidthCm('30');
+                              setBoxHeightCm('30');
+                            }}
+                            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                          >
+                            Box M (40×30×30 cm)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBoxUnit('cm');
+                              setBoxLengthCm('60');
+                              setBoxWidthCm('40');
+                              setBoxHeightCm('35');
+                            }}
+                            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                          >
+                            Box L (60×40×35 cm)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBoxUnit('m');
+                              setBoxLengthCm('1.2');
+                              setBoxWidthCm('1.0');
+                              setBoxHeightCm('1.5');
+                            }}
+                            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                          >
+                            Palet (1.2×1.0×1.5 m)
+                          </button>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                           <div>
                             <label className="block text-[11px] text-slate-500">
-                              Panjang (cm)
+                              Panjang ({boxUnit})
                             </label>
                             <input
                               type="number"
@@ -7350,13 +7522,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               step="any"
                               value={boxLengthCm}
                               onChange={(e) => setBoxLengthCm(e.target.value)}
-                              placeholder="60"
+                              placeholder={boxUnit === 'cm' ? '60' : '1.2'}
                               className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 font-mono text-xs tabular-nums"
                             />
                           </div>
                           <div>
                             <label className="block text-[11px] text-slate-500">
-                              Lebar (cm)
+                              Lebar ({boxUnit})
                             </label>
                             <input
                               type="number"
@@ -7364,13 +7536,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               step="any"
                               value={boxWidthCm}
                               onChange={(e) => setBoxWidthCm(e.target.value)}
-                              placeholder="40"
+                              placeholder={boxUnit === 'cm' ? '40' : '1.0'}
                               className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 font-mono text-xs tabular-nums"
                             />
                           </div>
                           <div>
                             <label className="block text-[11px] text-slate-500">
-                              Tinggi (cm)
+                              Tinggi ({boxUnit})
                             </label>
                             <input
                               type="number"
@@ -7378,13 +7550,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               step="any"
                               value={boxHeightCm}
                               onChange={(e) => setBoxHeightCm(e.target.value)}
-                              placeholder="35"
+                              placeholder={boxUnit === 'cm' ? '35' : '1.5'}
                               className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 font-mono text-xs tabular-nums"
                             />
                           </div>
                           <div>
                             <label className="block text-[11px] text-slate-500">
-                              Jumlah Koli
+                              Jumlah Koli / Unit
                             </label>
                             <input
                               type="number"

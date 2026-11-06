@@ -1154,6 +1154,10 @@ export async function upsertAssignmentInFirestore(
             ),
           }
         : {}),
+      ...(typeof assignment.slaDurationMinutes === 'number' &&
+      assignment.slaDurationMinutes > 0
+        ? { slaDurationMinutes: assignment.slaDurationMinutes }
+        : {}),
       ...(resolvedDeliveredAt
         ? {
             deliveredAt: clampString(
@@ -1737,6 +1741,10 @@ function mapDocToAssignment(data: Record<string, unknown>): Assignment {
     createdAt: timestampToIso(data.createdAt),
     tanggalTugas: String(data.tanggalTugas || ''),
     jadwalJamTiba: String(data.jadwalJamTiba || ''),
+    slaDurationMinutes:
+      typeof data.slaDurationMinutes === 'number' && data.slaDurationMinutes > 0
+        ? data.slaDurationMinutes
+        : undefined,
     driverId: String(data.driverCode || ''),
     driverCode: String(data.driverCode || ''),
     driverName: String(data.driverName || ''),

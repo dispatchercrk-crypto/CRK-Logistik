@@ -170,6 +170,7 @@ interface AssignmentRecord {
   createdAt: string;
   tanggalTugas: string;
   jadwalJamTiba?: string;
+  slaDurationMinutes?: number;
   deliveredAt?: string;
   driverId: string;
   driverName: string;
@@ -813,8 +814,105 @@ function resolveDriverPhone(driverId: string, fallbackPhone?: string): string {
   return found?.phone ? String(found.phone).trim() : '';
 }
 
+function parseFlexibleTimestampWib(raw?: string | null): number | null {
+  const str = String(raw || '').trim();
+  if (!str || str === '-' || str === 'undefined' || str === 'null') return null;
+
+  if (/^\d{10,13}$/.test(str)) {
+    const num = Number(str);
+    const epochMs = str.length === 10 ? num * 1000 : num;
+    if (Number.isFinite(epochMs) && epochMs > 946684800000) {
+      return epochMs;
+    }
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)) {
+    const ms = new Date(str).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const dmyMatch = str.match(
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+  );
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const month = Number(dmyMatch[2]) - 1;
+    const year = Number(dmyMatch[3]);
+    const hr = Number(dmyMatch[4] ?? 0);
+    const min = Number(dmyMatch[5] ?? 0);
+    const sec = Number(dmyMatch[6] ?? 0);
+    const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const textDateMatch = str.match(
+    /^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})(?:[,\s]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+  );
+  if (textDateMatch) {
+    const day = Number(textDateMatch[1]);
+    const monthStr = textDateMatch[2].toLowerCase();
+    const year = Number(textDateMatch[3]);
+    const hr = Number(textDateMatch[4] ?? 0);
+    const min = Number(textDateMatch[5] ?? 0);
+    const sec = Number(textDateMatch[6] ?? 0);
+    const monthMap: Record<string, number> = {
+      jan: 0, januari: 0, january: 0,
+      feb: 1, februari: 1, february: 1,
+      mar: 2, maret: 2, march: 2,
+      apr: 3, april: 3,
+      mei: 4, may: 4,
+      jun: 5, juni: 5, june: 5,
+      jul: 6, juli: 6, july: 6,
+      agu: 7, ags: 7, agustus: 7, aug: 7, august: 7,
+      sep: 8, september: 8,
+      okt: 9, oktober: 9, oct: 9, october: 9,
+      nov: 10, november: 10,
+      des: 11, desember: 11, dec: 11, december: 11,
+    };
+    const month = monthMap[monthStr];
+    if (month !== undefined) {
+      const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+      return Number.isFinite(ms) ? ms : null;
+    }
+  }
+  const ymdMatch = str.match(
+    /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+  );
+  if (ymdMatch) {
+    const year = Number(ymdMatch[1]);
+    const month = Number(ymdMatch[2]) - 1;
+    const day = Number(ymdMatch[3]);
+    const hr = Number(ymdMatch[4] ?? 0);
+    const min = Number(ymdMatch[5] ?? 0);
+    const sec = Number(ymdMatch[6] ?? 0);
+    const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const fallback = new Date(str).getTime();
+  return Number.isFinite(fallback) ? fallback : null;
+}
+
+function formatDurationMinutesServer(minutes: number | null): string {
+  if (minutes === null || !Number.isFinite(minutes) || minutes < 0) return '-';
+  if (minutes === 0) return '0 mnt';
+  const days = Math.floor(minutes / (24 * 60));
+  const remainingAfterDays = minutes % (24 * 60);
+  const hours = Math.floor(remainingAfterDays / 60);
+  const mins = remainingAfterDays % 60;
+
+  if (days > 0) {
+    if (hours > 0 && mins > 0) return `${days} hari ${hours} jam ${mins} mnt`;
+    if (hours > 0) return `${days} hari ${hours} jam`;
+    return `${days} hari`;
+  }
+  if (hours > 0) {
+    return mins > 0 ? `${hours} jam ${mins} mnt` : `${hours} jam`;
+  }
+  return `${mins} mnt`;
+}
+
 function formatWibTimestamp(isoOrDate?: string): string {
-  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  if (!isoOrDate) return '-';
+  const ms = parseFlexibleTimestampWib(isoOrDate);
+  const d = ms !== null ? new Date(ms) : new Date(isoOrDate);
   if (Number.isNaN(d.getTime())) return String(isoOrDate || '-');
   return `${d.toLocaleString('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -857,6 +955,30 @@ function formatDriverRealtimeWhatsAppMessage(
     typeof effectiveArrivalKm === 'number' &&
     effectiveArrivalKm >= dep.kmAwal
       ? effectiveArrivalKm - dep.kmAwal
+      : null;
+
+  const depMs = parseFlexibleTimestampWib(dep?.timestamp);
+  const delivMs = parseFlexibleTimestampWib(deliv?.timestamp || asg.deliveredAt);
+  const hoMs = parseFlexibleTimestampWib(ho?.timestamp);
+
+  // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered saja
+  const departToDeliveredMinutes =
+    depMs !== null && delivMs !== null && delivMs >= depMs
+      ? Math.max(0, Math.round((delivMs - depMs) / 60000))
+      : null;
+  const departToDeliveredText =
+    departToDeliveredMinutes !== null
+      ? formatDurationMinutesServer(departToDeliveredMinutes)
+      : null;
+
+  // Durasi Bongkar / Handover: hitung dari Waktu Delivered sampai Selesai Handover
+  const deliveredToHandoverMinutes =
+    delivMs !== null && hoMs !== null && hoMs >= delivMs
+      ? Math.max(0, Math.round((hoMs - delivMs) / 60000))
+      : null;
+  const deliveredToHandoverText =
+    deliveredToHandoverMinutes !== null
+      ? formatDurationMinutesServer(deliveredToHandoverMinutes)
       : null;
 
   const departureLines = dep
@@ -907,6 +1029,9 @@ function formatDriverRealtimeWhatsAppMessage(
         `Waktu Sampai : ${formatWibTimestamp(
           deliv?.timestamp || asg.deliveredAt || ho?.timestamp || ''
         )}`,
+        departToDeliveredText
+          ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+          : '',
         `Odometer KM Sampai : ${arrivalKm.toLocaleString('id-ID')} km${
           kmDelta !== null
             ? ` (Jarak Tempuh: ${kmDelta.toLocaleString('id-ID')} km)`
@@ -921,15 +1046,18 @@ function formatDriverRealtimeWhatsAppMessage(
             }), Monitor Pendingin (${hasFotoSuhuSampai ? 'Ada' : '-'})`
           : `Foto Sampai : Odometer (${hasFotoOdoSampai ? 'Ada' : '-'})`,
         deliv?.catatanSampai ? `Catatan Sampai : ${deliv.catatanSampai}` : '',
-      ]
+      ].filter(Boolean)
     : asg.status === 'Delivered'
     ? [
         '*--- DATA DELIVERED (SAMPAI DI TUJUAN) ---*',
         `Waktu Sampai : ${formatWibTimestamp(
           asg.deliveredAt || new Date().toISOString()
         )}`,
+        departToDeliveredText
+          ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+          : '',
         'Status Sampai : Armada telah tiba di tujuan (Delivered)',
-      ]
+      ].filter(Boolean)
     : [];
 
   const handoverLines = ho
@@ -937,6 +1065,12 @@ function formatDriverRealtimeWhatsAppMessage(
         '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
         `Waktu Serah Terima : ${formatWibTimestamp(ho.timestamp)}`,
         `Nama Penerima : ${ho.penerimaNama || '-'}`,
+        deliveredToHandoverText
+          ? `Durasi Bongkar / Handover : ${deliveredToHandoverText}`
+          : '',
+        departToDeliveredText
+          ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+          : '',
         `Bukti & TTD : Foto Bukti (${
           ho.fotoBuktiSerahTerima || asg.driveMedia?.fotoBuktiSerahTerimaUrl
             ? 'Ada'
@@ -949,7 +1083,7 @@ function formatDriverRealtimeWhatsAppMessage(
         ho.catatanSerahTerima
           ? `Catatan Serah Terima : ${ho.catatanSerahTerima}`
           : '',
-      ]
+      ].filter(Boolean)
     : asg.status === 'Delivered'
     ? [
         '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
@@ -6775,6 +6909,13 @@ async function startServer() {
       String(origin || '').trim() || 'Menunggu Titik Keberangkatan Driver';
     const beratMuatanClean = String(beratMuatan || '').trim();
     const volumeCbmClean = String(volumeCbm || '').trim();
+    const rawSla = req.body?.slaDurationMinutes;
+    const slaDurationMinutes =
+      typeof rawSla === 'number' && rawSla > 0
+        ? rawSla
+        : typeof rawSla === 'string' && Number(rawSla) > 0
+        ? Number(rawSla)
+        : 210;
 
     const newAssignment: AssignmentRecord = {
       id: `ASG-${Date.now()}-${nextSeq}`,
@@ -6785,6 +6926,7 @@ async function startServer() {
       createdAt: realTimeFormatted,
       tanggalTugas: realTimeFormatted,
       jadwalJamTiba: jamTibaClean || undefined,
+      slaDurationMinutes,
       driverId: String(driverId).trim(),
       driverName: String(driverName).trim(),
       driverPhone: resolvedDriverPhone,
@@ -6884,6 +7026,11 @@ async function startServer() {
         req.body?.jadwalJamTiba !== undefined
           ? String(req.body.jadwalJamTiba || '').trim() || undefined
           : existing.jadwalJamTiba,
+      slaDurationMinutes:
+        req.body?.slaDurationMinutes !== undefined &&
+        Number(req.body.slaDurationMinutes) > 0
+          ? Number(req.body.slaDurationMinutes)
+          : existing.slaDurationMinutes || 210,
       deliveredAt:
         nextStatus === 'Delivered' && !existing.deliveredAt
           ? new Date().toISOString()

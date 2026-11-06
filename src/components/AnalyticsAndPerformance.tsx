@@ -7,6 +7,7 @@ import {
   Legend,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -34,6 +35,7 @@ import {
   TaskStatus,
 } from '../types';
 import {
+  DEFAULT_SLA_DURATION_MINUTES,
   calculateTripDurationMinutes,
   evaluateActiveUnitsCbmSummary,
   evaluateAssignmentLoadUtilization,
@@ -72,11 +74,21 @@ export interface DriverPerformanceRow {
 }
 
 export interface OnTimeSchedulePoint {
-  tanggalLabel: string;
+  id?: string;
+  tanggalLabel: string; // "Tugas 1", "Tugas 2", dst.
+  taskLabel: string;
+  noPenugasan: string;
+  driverName: string;
+  destination: string;
+  actualMinutes: number;
+  slaMinutes: number;
   tepatWaktu: number;
   terlambat: number;
   aktifDalamJadwal: number;
   aktifLewatJadwal: number;
+  barColor: string;
+  statusLabel: string;
+  delayMinutes: number;
 }
 
 export function useOnTimeDeliveryStats(assignments: Assignment[]) {
@@ -89,48 +101,21 @@ export function useOnTimeDeliveryStats(assignments: Assignment[]) {
     let lateMinutesSum = 0;
     let lateMinutesCount = 0;
 
-    const byDate = new Map<
-      string,
-      {
-        tanggalRaw: string;
-        tepatWaktu: number;
-        terlambat: number;
-        aktifDalamJadwal: number;
-        aktifLewatJadwal: number;
-      }
-    >();
-
     for (const asg of assignments) {
       const ev = evaluateAssignmentOtd(asg, nowMs);
-      const dateKey = (asg.tanggalTugas || 'Tanpa Jadwal').trim();
-      const bucket = byDate.get(dateKey) || {
-        tanggalRaw: dateKey,
-        tepatWaktu: 0,
-        terlambat: 0,
-        aktifDalamJadwal: 0,
-        aktifLewatJadwal: 0,
-      };
 
       if (ev.category === 'ON_TIME') {
         onTimeCompleted += 1;
-        bucket.tepatWaktu += 1;
       } else if (ev.category === 'LATE_COMPLETED') {
         lateCompleted += 1;
-        bucket.terlambat += 1;
         if (ev.delayMinutes > 0) {
           lateMinutesSum += ev.delayMinutes;
           lateMinutesCount += 1;
         }
       } else if (ev.category === 'OVERDUE_ACTIVE') {
         overdueActive += 1;
-        bucket.aktifLewatJadwal += 1;
       } else if (ev.category === 'ON_TRACK_ACTIVE') {
         onTrackActive += 1;
-        bucket.aktifDalamJadwal += 1;
-      }
-
-      if (asg.tanggalTugas) {
-        byDate.set(dateKey, bucket);
       }
     }
 
@@ -155,22 +140,44 @@ export function useOnTimeDeliveryStats(assignments: Assignment[]) {
         ? Math.round(lateMinutesSum / lateMinutesCount)
         : null;
 
-    const timelineData: OnTimeSchedulePoint[] = Array.from(byDate.values())
-      .sort((a, b) => a.tanggalRaw.localeCompare(b.tanggalRaw))
-      .slice(-7)
-      .map((item) => {
-        const shortLabel =
-          item.tanggalRaw.length >= 10
-            ? item.tanggalRaw.slice(5)
-            : item.tanggalRaw;
+    // Visualisasi Berurutan: Sumbu X adalah Identitas Tugas Unik ("Tugas 1", "Tugas 2", dst.)
+    const relevantAssignments = assignments.slice(-12);
+    const timelineData: OnTimeSchedulePoint[] = relevantAssignments.map(
+      (asg, idx) => {
+        const ev = evaluateAssignmentOtd(asg, nowMs);
+        const taskNum = idx + 1;
+        const taskLabel = `Tugas ${taskNum}`;
+        const actualDur = ev.actualMinutes ?? ev.elapsedMinutes ?? 0;
+        const barColor =
+          ev.category === 'ON_TIME'
+            ? '#059669' // Hijau: Selesai Tepat Waktu
+            : ev.category === 'LATE_COMPLETED'
+            ? '#dc2626' // Merah: Selesai Terlambat
+            : ev.category === 'ON_TRACK_ACTIVE'
+            ? '#0284c7' // Biru: Aktif Sesuai Jadwal
+            : ev.category === 'OVERDUE_ACTIVE'
+            ? '#d97706' // Oranye: Aktif Lewat Jadwal
+            : '#94a3b8'; // Abu-abu: Menunggu Berangkat
+
         return {
-          tanggalLabel: shortLabel,
-          tepatWaktu: item.tepatWaktu,
-          terlambat: item.terlambat,
-          aktifDalamJadwal: item.aktifDalamJadwal,
-          aktifLewatJadwal: item.aktifLewatJadwal,
+          id: asg.id,
+          tanggalLabel: taskLabel,
+          taskLabel,
+          noPenugasan: asg.noPenugasan,
+          driverName: asg.driverName || 'Driver',
+          destination: asg.destination || 'Tujuan',
+          actualMinutes: actualDur,
+          slaMinutes: ev.slaMinutes,
+          tepatWaktu: ev.category === 'ON_TIME' ? actualDur : 0,
+          terlambat: ev.category === 'LATE_COMPLETED' ? actualDur : 0,
+          aktifDalamJadwal: ev.category === 'ON_TRACK_ACTIVE' ? actualDur : 0,
+          aktifLewatJadwal: ev.category === 'OVERDUE_ACTIVE' ? actualDur : 0,
+          barColor,
+          statusLabel: ev.statusLabel,
+          delayMinutes: ev.delayMinutes,
         };
-      });
+      }
+    );
 
     return {
       onTimeCompleted,
@@ -2016,12 +2023,10 @@ export const OnTimeDeliverySummarySection: React.FC<OnTimeSummaryProps> = ({
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-900">
-                Visualisasi Ketepatan Jadwal Pengiriman (On-Time vs Terlambat)
+                Visualisasi Durasi Pengiriman Berbasis Countdown (SLA {DEFAULT_SLA_DURATION_MINUTES} Mnt)
               </h3>
               <p className="text-xs text-slate-500">
-                {otd.timelineData.length > 1
-                  ? 'Perbandingan realisasi timestamp pengiriman terhadap tanggal jadwal penugasan'
-                  : 'Distribusi status ketepatan jadwal seluruh penugasan rantai dingin'}
+                Waktu aktual pengerjaan tugas sejak armada berangkat dengan batas standar SLA {DEFAULT_SLA_DURATION_MINUTES} menit (3 Jam 30 Menit)
               </p>
             </div>
           </div>
@@ -2031,102 +2036,114 @@ export const OnTimeDeliverySummarySection: React.FC<OnTimeSummaryProps> = ({
               Data visualisasi On-Time Delivery akan tampil setelah Surat Tugas
               diterbitkan.
             </div>
-          ) : otd.timelineData.length > 1 ? (
-            <div className="h-56 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={otd.timelineData}
-                  margin={{ top: 8, right: 12, left: -16, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="tanggalLabel"
-                    tick={{ fontSize: 11, fill: '#334155' }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={{ fontSize: 11, fill: '#334155' }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                  />
-                  <Tooltip
-                    formatter={(val, name) => [`${val ?? 0} Tugas`, String(name)]}
-                    contentStyle={{
-                      borderRadius: '8px',
-                      borderColor: '#cbd5e1',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={30}
-                    wrapperStyle={{ fontSize: '11px' }}
-                  />
-                  <Bar
-                    dataKey="tepatWaktu"
-                    name="Selesai Tepat Waktu"
-                    stackId="otd"
-                    fill="#059669"
-                    maxBarSize={48}
-                  />
-                  <Bar
-                    dataKey="terlambat"
-                    name="Selesai Terlambat"
-                    stackId="otd"
-                    fill="#dc2626"
-                    maxBarSize={48}
-                  />
-                  <Bar
-                    dataKey="aktifDalamJadwal"
-                    name="Aktif Sesuai Jadwal"
-                    stackId="otd"
-                    fill="#0284c7"
-                    maxBarSize={48}
-                  />
-                  <Bar
-                    dataKey="aktifLewatJadwal"
-                    name="Aktif Lewat Jadwal"
-                    stackId="otd"
-                    fill="#d97706"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={48}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
           ) : (
-            <div className="h-56 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={otdBarData}
-                  margin={{ top: 8, right: 12, left: -16, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="status"
-                    tick={{ fontSize: 11, fill: '#334155' }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={{ fontSize: 11, fill: '#334155' }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                  />
-                  <Tooltip
-                    formatter={(val) => [`${val ?? 0} Penugasan`, 'Jumlah']}
-                    contentStyle={{
-                      borderRadius: '8px',
-                      borderColor: '#cbd5e1',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Bar dataKey="jumlah" radius={[6, 6, 0, 0]} maxBarSize={56}>
-                    {otdBarData.map((entry, idx) => (
-                      <Cell key={`otd-cell-${idx}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="space-y-3">
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={otd.timelineData}
+                    margin={{ top: 12, right: 12, left: -10, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="taskLabel"
+                      tick={{ fontSize: 11, fill: '#334155' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <YAxis
+                      unit=" m"
+                      tick={{ fontSize: 11, fill: '#334155' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <ReferenceLine
+                      y={DEFAULT_SLA_DURATION_MINUTES}
+                      stroke="#dc2626"
+                      strokeDasharray="4 4"
+                      strokeWidth={1.5}
+                      label={{
+                        value: `Batas SLA (${DEFAULT_SLA_DURATION_MINUTES}m)`,
+                        position: 'insideTopRight',
+                        fill: '#dc2626',
+                        fontSize: 10,
+                      }}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const data = payload[0].payload as OnTimeSchedulePoint;
+                        return (
+                          <div className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-md text-xs space-y-1">
+                            <div className="font-semibold text-slate-900 border-b border-slate-100 pb-1">
+                              {data.taskLabel} • {data.noPenugasan}
+                            </div>
+                            <div className="text-slate-600">
+                              <span className="font-medium">Driver:</span> {data.driverName}
+                            </div>
+                            <div className="text-slate-600">
+                              <span className="font-medium">Tujuan:</span> {data.destination}
+                            </div>
+                            <div className="text-slate-600">
+                              <span className="font-medium">Durasi:</span>{' '}
+                              <span className="font-mono font-semibold text-slate-900">
+                                {data.actualMinutes} menit ({formatDurationMinutes(data.actualMinutes)})
+                              </span>
+                            </div>
+                            <div className="text-slate-600">
+                              <span className="font-medium">Batas SLA:</span> {data.slaMinutes} menit
+                            </div>
+                            <div className="pt-0.5">
+                              <span
+                                className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold text-white ${
+                                  data.statusLabel.includes('Tepat')
+                                    ? 'bg-emerald-600'
+                                    : data.statusLabel.includes('Terlambat')
+                                    ? 'bg-rose-600'
+                                    : data.statusLabel.includes('Lewat')
+                                    ? 'bg-amber-600'
+                                    : 'bg-sky-600'
+                                }`}
+                              >
+                                {data.statusLabel}
+                                {data.delayMinutes > 0 ? ` (+${data.delayMinutes} mnt)` : ''}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Bar
+                      dataKey="actualMinutes"
+                      name="Durasi Pengerjaan"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={44}
+                    >
+                      {otd.timelineData.map((entry, idx) => (
+                        <Cell key={`cell-${idx}`} fill={entry.barColor} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Legend Indikator SLA */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-1 text-[11px] text-slate-600">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" />
+                  <span>Selesai Tepat Waktu (≤ {DEFAULT_SLA_DURATION_MINUTES} mnt)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-rose-600" />
+                  <span>Selesai Terlambat (&gt; {DEFAULT_SLA_DURATION_MINUTES} mnt)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-sky-600" />
+                  <span>Aktif Sesuai Jadwal</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-sm bg-amber-600" />
+                  <span>Aktif Lewat Jadwal</span>
+                </div>
+              </div>
             </div>
           )}
         </div>

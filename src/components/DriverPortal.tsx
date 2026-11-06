@@ -532,6 +532,29 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
   const canFillExpenseForm =
     hasSuratTugas && activeTasks.length === 0 && completedTasks.length > 0;
 
+  const [reportedTaskIds, setReportedTaskIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(`crk_reported_expense_batch_${driver.id}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [forceShowExpenseForm, setForceShowExpenseForm] =
+    useState<boolean>(false);
+
+  const hasUnreportedCompletedTasks = useMemo(() => {
+    if (completedTasks.length === 0) return false;
+    const reportedSet = new Set(reportedTaskIds);
+    return completedTasks.some((t) => !reportedSet.has(t.id));
+  }, [completedTasks, reportedTaskIds]);
+
+  const isCurrentBatchReported =
+    !hasUnreportedCompletedTasks &&
+    completedTasks.length > 0 &&
+    activeTasks.length === 0;
+
   useEffect(() => {
     if (!hasSuratTugas && activeTab === 'pengeluaran') {
       setActiveTab('aktif');
@@ -816,6 +839,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         setTotalPengeluaranTolInput('');
         setFotoStrukTol('');
         setCatatanPengeluaran('');
+        setExpenseTujuanList(['']);
+        setExpenseTujuanPengiriman('');
+        setTujuanManuallyEdited(false);
+        setForceShowExpenseForm(false);
+
+        const currentCompletedIds = completedTasks.map((t) => t.id);
+        const updatedReported = Array.from(
+          new Set([...reportedTaskIds, ...currentCompletedIds])
+        );
+        setReportedTaskIds(updatedReported);
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(
+              `crk_reported_expense_batch_${driver.id}`,
+              JSON.stringify(updatedReported)
+            );
+          } catch {
+            // ignore
+          }
+        }
       }
     } finally {
       setSubmittingExpense(false);
@@ -2972,7 +3015,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                   akan tampil otomatis secara real-time di halaman ini.
                 </p>
 
-                {canFillExpenseForm && (
+                {canFillExpenseForm && !isCurrentBatchReported && (
                   <div className="mx-auto mt-5 max-w-md border-t border-slate-100 pt-5">
                     <p className="text-xs text-slate-600">
                       Seluruh {relevantCompletedTasks.length} Surat Tugas yang diberikan telah selesai. Silakan isi Form Input Pengeluaran harian Anda.
@@ -4412,6 +4455,32 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                       Kembali &amp; Selesaikan Tugas Aktif ({activeTasks.length})
                     </button>
                   </div>
+                </div>
+              </div>
+            ) : isCurrentBatchReported && !forceShowExpenseForm ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 text-center space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+                    Laporan Pengeluaran Berhasil Terkirim &amp; Disimpan
+                  </h2>
+                  <p className="mt-1 text-xs sm:text-sm text-slate-700 max-w-md mx-auto">
+                    Seluruh Surat Tugas telah diselesaikan dan laporan pengeluaran harian Anda telah tersimpan rapi ke database Spreadsheet.
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Form input pengeluaran baru akan otomatis terbuka kembali saat Anda menerima Surat Tugas baru dari Dispatcher.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setForceShowExpenseForm(true)}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                  >
+                    + Input Tambahan / Koreksi
+                  </button>
                 </div>
               </div>
             ) : (

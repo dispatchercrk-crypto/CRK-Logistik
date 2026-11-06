@@ -131,11 +131,15 @@ export const PrintableAssignmentModal: React.FC<
 
   if (!assignment) return null;
 
-  const durationMins = calculateTripDurationMinutes(
+  const deliveredTimestamp =
+    assignment.deliveredData?.timestamp || assignment.deliveredAt;
+  const departToDeliveredMinutes = calculateTripDurationMinutes(
     assignment.departureData?.timestamp,
-    assignment.handoverData?.timestamp ||
-      assignment.deliveredData?.timestamp ||
-      assignment.deliveredAt
+    deliveredTimestamp
+  );
+  const bongkarMinutes = calculateTripDurationMinutes(
+    deliveredTimestamp,
+    assignment.handoverData?.timestamp
   );
   const otdEval = evaluateAssignmentOtd(assignment);
 
@@ -297,10 +301,15 @@ export const PrintableAssignmentModal: React.FC<
             </p>
           </div>
           <div>
-            <p className="text-slate-500">Durasi Perjalanan Total</p>
+            <p className="text-slate-500">Durasi Perjalanan (Berangkat → Delivered)</p>
             <p className="mt-0.5 font-mono text-sm font-bold text-slate-900 tabular-nums">
-              {formatDurationMinutes(durationMins)}
+              {formatDurationMinutes(departToDeliveredMinutes)}
             </p>
+            {bongkarMinutes !== null && (
+              <p className="text-[10px] text-slate-600 font-medium">
+                Bongkar/Handover: {formatDurationMinutes(bongkarMinutes)}
+              </p>
+            )}
           </div>
 
           <div>
@@ -450,6 +459,16 @@ export const PrintableAssignmentModal: React.FC<
                     </dd>
                   </div>
                 )}
+                {departToDeliveredMinutes !== null && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">
+                      Durasi Perjalanan (Berangkat → Delivered):
+                    </dt>
+                    <dd className="font-mono font-semibold text-slate-900 tabular-nums">
+                      {formatDurationMinutes(departToDeliveredMinutes)}
+                    </dd>
+                  </div>
+                )}
                 {endKm !== undefined && (
                   <div className="flex justify-between gap-2">
                     <dt className="text-slate-500">Odometer KM Sampai:</dt>
@@ -503,6 +522,16 @@ export const PrintableAssignmentModal: React.FC<
                         )}
                       </dd>
                     </div>
+                    {bongkarMinutes !== null && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-slate-500">
+                          Durasi Bongkar / Handover:
+                        </dt>
+                        <dd className="font-mono font-semibold text-sky-800 tabular-nums">
+                          {formatDurationMinutes(bongkarMinutes)}
+                        </dd>
+                      </div>
+                    )}
                     <div className="flex justify-between gap-2">
                       <dt className="text-slate-500">
                         Nama Penerima Serah Terima:

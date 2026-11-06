@@ -45,13 +45,22 @@ export function parseFlexibleTimestamp(raw?: string | null): number | null {
   const str = String(raw || '').trim();
   if (!str || str === '-' || str === 'undefined' || str === 'null') return null;
 
-  // 1. Check if already an ISO string with explicit timezone / Z: e.g. 2026-11-05T13:35:27.000Z or +07:00
+  // 1. Pure epoch timestamp numbers (ms or seconds)
+  if (/^\d{10,13}$/.test(str)) {
+    const num = Number(str);
+    const epochMs = str.length === 10 ? num * 1000 : num;
+    if (Number.isFinite(epochMs) && epochMs > 946684800000) {
+      return epochMs;
+    }
+  }
+
+  // 2. Check if already an ISO string with explicit timezone / Z: e.g. 2026-11-05T13:35:27.000Z or +07:00
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)) {
     const ms = new Date(str).getTime();
     return Number.isFinite(ms) ? ms : null;
   }
 
-  // 2. Format: DD-MM-YYYY or DD/MM/YYYY with optional time separated by ;, space, T, or comma
+  // 3. Format: DD-MM-YYYY or DD/MM/YYYY with optional time separated by ;, space, T, or comma
   // e.g. 05-11-2026;20:35:27 or 05/11/2026, 20.35.27 or 05-11-2026 20:35:27
   const dmyMatch = str.match(
     /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
@@ -68,7 +77,39 @@ export function parseFlexibleTimestamp(raw?: string | null): number | null {
     return Number.isFinite(ms) ? ms : null;
   }
 
-  // 3. Format: YYYY-MM-DD or YYYY/MM/DD with optional time
+  // 4. Textual Indonesian/English date e.g. "05 Nov 2026, 20.35.27 WIB" or "05 November 2026 20:35:27"
+  const textDateMatch = str.match(
+    /^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})(?:[,\s]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
+  );
+  if (textDateMatch) {
+    const day = Number(textDateMatch[1]);
+    const monthStr = textDateMatch[2].toLowerCase();
+    const year = Number(textDateMatch[3]);
+    const hr = Number(textDateMatch[4] ?? 0);
+    const min = Number(textDateMatch[5] ?? 0);
+    const sec = Number(textDateMatch[6] ?? 0);
+    const monthMap: Record<string, number> = {
+      jan: 0, januari: 0, january: 0,
+      feb: 1, februari: 1, february: 1,
+      mar: 2, maret: 2, march: 2,
+      apr: 3, april: 3,
+      mei: 4, may: 4,
+      jun: 5, juni: 5, june: 5,
+      jul: 6, juli: 6, july: 6,
+      agu: 7, ags: 7, agustus: 7, aug: 7, august: 7,
+      sep: 8, september: 8,
+      okt: 9, oktober: 9, oct: 9, october: 9,
+      nov: 10, november: 10,
+      des: 11, desember: 11, dec: 11, december: 11,
+    };
+    const month = monthMap[monthStr];
+    if (month !== undefined) {
+      const ms = Date.UTC(year, month, day, hr - 7, min, sec);
+      return Number.isFinite(ms) ? ms : null;
+    }
+  }
+
+  // 5. Format: YYYY-MM-DD or YYYY/MM/DD with optional time
   // e.g. 2026-11-05;20:35:27 or 2026-11-05 20:35:27 or 2026-11-05T20:35:27 (without trailing Z/offset)
   const ymdMatch = str.match(
     /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[;\s,T]+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/
@@ -207,6 +248,8 @@ export function parseScheduledDeadlineMs(
   return deadlineMs;
 }
 
+export const DEFAULT_SLA_DURATION_MINUTES = 210; // 3 Jam 30 Menit
+
 export type OtdCategory =
   | 'ON_TIME'
   | 'LATE_COMPLETED'
@@ -216,9 +259,14 @@ export type OtdCategory =
 
 export interface AssignmentOtdEvaluation {
   category: OtdCategory;
+  slaMinutes: number;
+  actualMinutes: number | null;
+  elapsedMinutes: number | null;
+  remainingMinutes: number | null;
+  delayMinutes: number;
   deadlineMs: number | null;
   referenceMs: number | null;
-  delayMinutes: number;
+  statusLabel: string;
 }
 
 export function evaluateAssignmentOtd(
@@ -226,25 +274,20 @@ export function evaluateAssignmentOtd(
     status: string;
     tanggalTugas?: string;
     jadwalJamTiba?: string;
+    slaDurationMinutes?: number;
     deliveredAt?: string;
+    deliveredData?: { timestamp?: string };
     departureData?: { timestamp?: string };
     handoverData?: { timestamp?: string };
     createdAt?: string;
   },
   nowMs: number = Date.now()
 ): AssignmentOtdEvaluation {
-  const deadlineMs = parseScheduledDeadlineMs(
-    assignment.tanggalTugas,
-    assignment.jadwalJamTiba
-  );
-  if (deadlineMs === null) {
-    return {
-      category: 'UNSCHEDULED',
-      deadlineMs: null,
-      referenceMs: null,
-      delayMinutes: 0,
-    };
-  }
+  const slaMinutes =
+    typeof assignment.slaDurationMinutes === 'number' &&
+    assignment.slaDurationMinutes > 0
+      ? assignment.slaDurationMinutes
+      : DEFAULT_SLA_DURATION_MINUTES;
 
   const normalizedStatus = String(assignment.status || '')
     .trim()
@@ -254,54 +297,105 @@ export function evaluateAssignmentOtd(
     normalizedStatus === 'handover' ||
     normalizedStatus === 'delivered';
 
+  const depMs = parseFlexibleTimestamp(assignment.departureData?.timestamp);
+  const completedMs =
+    parseFlexibleTimestamp(assignment.deliveredAt) ??
+    parseFlexibleTimestamp(assignment.deliveredData?.timestamp) ??
+    parseFlexibleTimestamp(assignment.handoverData?.timestamp);
+
+  // Jika armada sudah berangkat, batas waktu hitung mundur adalah depMs + (slaMinutes * 60.000)
+  const deadlineMs = depMs !== null ? depMs + slaMinutes * 60000 : null;
+
+  // 1. Tugas Selesai (Completed / Delivered / Handover)
   if (isCompleted) {
-    const completedMs =
-      parseFlexibleTimestamp(assignment.handoverData?.timestamp) ??
-      parseFlexibleTimestamp(assignment.deliveredAt) ??
-      parseFlexibleTimestamp(assignment.departureData?.timestamp) ??
-      parseFlexibleTimestamp(assignment.createdAt);
-
-    if (completedMs === null) {
-      return {
-        category: 'ON_TIME',
-        deadlineMs,
-        referenceMs: null,
-        delayMinutes: 0,
-      };
+    if (depMs !== null && completedMs !== null) {
+      // Waktu Aktual Pengiriman = (Waktu Selesai / Sampai) dikurangi (Waktu Mulai / Berangkat)
+      const actualMinutes = Math.max(0, Math.round((completedMs - depMs) / 60000));
+      if (actualMinutes <= slaMinutes) {
+        return {
+          category: 'ON_TIME',
+          slaMinutes,
+          actualMinutes,
+          elapsedMinutes: actualMinutes,
+          remainingMinutes: Math.max(0, slaMinutes - actualMinutes),
+          delayMinutes: 0,
+          deadlineMs,
+          referenceMs: completedMs,
+          statusLabel: 'Selesai Tepat Waktu',
+        };
+      } else {
+        const delayMinutes = actualMinutes - slaMinutes;
+        return {
+          category: 'LATE_COMPLETED',
+          slaMinutes,
+          actualMinutes,
+          elapsedMinutes: actualMinutes,
+          remainingMinutes: 0,
+          delayMinutes,
+          deadlineMs,
+          referenceMs: completedMs,
+          statusLabel: 'Selesai Terlambat',
+        };
+      }
     }
 
-    if (completedMs <= deadlineMs) {
-      return {
-        category: 'ON_TIME',
-        deadlineMs,
-        referenceMs: completedMs,
-        delayMinutes: 0,
-      };
-    }
-
+    // Fallback jika timestamp berangkat belum ada tapi status sudah selesai
     return {
-      category: 'LATE_COMPLETED',
-      deadlineMs,
-      referenceMs: completedMs,
-      delayMinutes: Math.max(1, Math.round((completedMs - deadlineMs) / 60000)),
-    };
-  }
-
-  // Active task ('Menunggu Berangkat' | 'Dalam Perjalanan')
-  if (nowMs <= deadlineMs) {
-    return {
-      category: 'ON_TRACK_ACTIVE',
-      deadlineMs,
-      referenceMs: nowMs,
+      category: 'ON_TIME',
+      slaMinutes,
+      actualMinutes: null,
+      elapsedMinutes: null,
+      remainingMinutes: 0,
       delayMinutes: 0,
+      deadlineMs: null,
+      referenceMs: completedMs,
+      statusLabel: 'Selesai Tepat Waktu',
     };
   }
 
+  // 2. Tugas Masih Berjalan (Status Aktif)
+  if (depMs !== null) {
+    // Tombol mulai / berangkat sudah ditekan: hitung durasi menit murni sejak keberangkatan
+    const elapsedMinutes = Math.max(0, Math.round((nowMs - depMs) / 60000));
+    if (elapsedMinutes <= slaMinutes) {
+      return {
+        category: 'ON_TRACK_ACTIVE',
+        slaMinutes,
+        actualMinutes: null,
+        elapsedMinutes,
+        remainingMinutes: Math.max(0, slaMinutes - elapsedMinutes),
+        delayMinutes: 0,
+        deadlineMs,
+        referenceMs: nowMs,
+        statusLabel: 'Aktif Sesuai Jadwal',
+      };
+    } else {
+      const delayMinutes = elapsedMinutes - slaMinutes;
+      return {
+        category: 'OVERDUE_ACTIVE',
+        slaMinutes,
+        actualMinutes: null,
+        elapsedMinutes,
+        remainingMinutes: 0,
+        delayMinutes,
+        deadlineMs,
+        referenceMs: nowMs,
+        statusLabel: 'Aktif Lewat Jadwal',
+      };
+    }
+  }
+
+  // 3. Menunggu Berangkat (Belum Mulai Berangkat)
   return {
-    category: 'OVERDUE_ACTIVE',
-    deadlineMs,
-    referenceMs: nowMs,
-    delayMinutes: Math.max(1, Math.round((nowMs - deadlineMs) / 60000)),
+    category: 'UNSCHEDULED',
+    slaMinutes,
+    actualMinutes: null,
+    elapsedMinutes: 0,
+    remainingMinutes: slaMinutes,
+    delayMinutes: 0,
+    deadlineMs: null,
+    referenceMs: null,
+    statusLabel: 'Menunggu Berangkat',
   };
 }
 
@@ -664,26 +758,77 @@ export function parseCbmNumeric(
       ? Math.round(raw * 1000) / 1000
       : null;
   }
-  const trimmed = String(raw).trim();
-  if (!trimmed) return null;
+  const str = String(raw).trim();
+  if (!str) return null;
 
-  const cleaned = trimmed
-    .toLowerCase()
-    .replace(/m³|m3|cbm|kubik/g, ' ')
-    .trim();
-  const match = cleaned.match(/(\d+(?:[.,]\d+)?)/);
-  if (!match) return null;
-
-  let numStr = match[1];
-  if (numStr.includes(',') && !numStr.includes('.')) {
-    numStr = numStr.replace(',', '.');
-  } else if (numStr.includes(',') && numStr.includes('.')) {
-    numStr = numStr.replace(/,/g, '');
+  // 1. Explicit CBM / m3 / m³ / kubik pattern: e.g. "14 CBM", "14.5 m3", "CBM: 14", "4 Ton / 14 CBM"
+  const explicitCbmMatch =
+    str.match(/(?:cbm|m3|m³|kubik)\s*[:=]?\s*(\d+(?:[.,]\d+)?)/i) ||
+    str.match(/(\d+(?:[.,]\d+)?)\s*(?:cbm|m3|m³|kubik)\b/i);
+  if (explicitCbmMatch) {
+    let numStr = explicitCbmMatch[1];
+    if (numStr.includes(',') && !numStr.includes('.')) numStr = numStr.replace(',', '.');
+    else if (numStr.includes(',') && numStr.includes('.')) numStr = numStr.replace(/,/g, '');
+    const val = Number.parseFloat(numStr);
+    if (Number.isFinite(val) && val >= 0) return Math.round(val * 1000) / 1000;
   }
 
-  const parsed = Number.parseFloat(numStr);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return Math.round(parsed * 1000) / 1000;
+  // 2. 3D Dimension pattern: e.g. "60 x 40 x 35", "60x40x35 cm", "1.2 x 0.8 x 1.5 m", "60x40x35 x 100 koli"
+  const dimMatch = str.match(
+    /(\d+(?:[.,]\d+)?)\s*(cm|m)?\s*[xX*×]\s*(\d+(?:[.,]\d+)?)\s*(cm|m)?\s*[xX*×]\s*(\d+(?:[.,]\d+)?)\s*(cm|meter|m)?(?:\s*(?:[xX*×]|[\(\[])\s*(\d+))?/i
+  );
+  if (dimMatch) {
+    const parseDim = (s?: string) =>
+      Number.parseFloat(String(s || '').replace(',', '.'));
+    const d1 = parseDim(dimMatch[1]);
+    const d2 = parseDim(dimMatch[3]);
+    const d3 = parseDim(dimMatch[5]);
+    const koli = dimMatch[7] ? Number.parseInt(dimMatch[7], 10) : 1;
+    const unitHint = (
+      dimMatch[2] ||
+      dimMatch[4] ||
+      dimMatch[6] ||
+      ''
+    ).toLowerCase();
+
+    if (
+      Number.isFinite(d1) &&
+      Number.isFinite(d2) &&
+      Number.isFinite(d3) &&
+      d1 > 0 &&
+      d2 > 0 &&
+      d3 > 0
+    ) {
+      const isMeter =
+        unitHint === 'm' ||
+        unitHint === 'meter' ||
+        (d1 < 10 && d2 < 10 && d3 < 10 && !unitHint.includes('cm'));
+      const cbm = isMeter
+        ? d1 * d2 * d3 * (koli || 1)
+        : (d1 * d2 * d3 * (koli || 1)) / 1_000_000;
+      return Math.round(cbm * 1000) / 1000;
+    }
+  }
+
+  // 3. Liter / L: e.g. "12000 liter" -> 12 CBM (1000 L = 1 CBM)
+  const ltrMatch = str.match(/(\d+(?:[.,]\d+)?)\s*(?:liter|ltr|l)\b/i);
+  if (ltrMatch) {
+    const val = Number.parseFloat(ltrMatch[1].replace(',', '.'));
+    if (Number.isFinite(val) && val > 0)
+      return Math.round((val / 1000) * 1000) / 1000;
+  }
+
+  // 4. Standalone pure number: e.g. "14.5", "14,5"
+  const bareMatch = str.match(/^(\d+(?:[.,]\d+)?)$/);
+  if (bareMatch) {
+    let numStr = bareMatch[1];
+    if (numStr.includes(',') && !numStr.includes('.')) numStr = numStr.replace(',', '.');
+    else if (numStr.includes(',') && numStr.includes('.')) numStr = numStr.replace(/,/g, '');
+    const val = Number.parseFloat(numStr);
+    if (Number.isFinite(val) && val >= 0) return Math.round(val * 1000) / 1000;
+  }
+
+  return null;
 }
 
 export function formatCbmValue(
@@ -702,24 +847,32 @@ export function formatCbmValue(
 }
 
 export function calculateBoxCbmFromCm(
-  lengthCm: number,
-  widthCm: number,
-  heightCm: number,
-  koliCount = 1
+  length: number | string,
+  width: number | string,
+  height: number | string,
+  koliCount: number | string = 1,
+  unit: 'cm' | 'm' = 'cm'
 ): number {
-  if (
-    !Number.isFinite(lengthCm) ||
-    !Number.isFinite(widthCm) ||
-    !Number.isFinite(heightCm) ||
-    !Number.isFinite(koliCount) ||
-    lengthCm <= 0 ||
-    widthCm <= 0 ||
-    heightCm <= 0 ||
-    koliCount <= 0
-  ) {
+  const parseVal = (v: number | string): number => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    const s = String(v || '').trim().replace(',', '.');
+    const n = Number.parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const l = parseVal(length);
+  const w = parseVal(width);
+  const h = parseVal(height);
+  const k = Math.max(1, parseVal(koliCount));
+
+  if (l <= 0 || w <= 0 || h <= 0) {
     return 0;
   }
-  const totalM3 = (lengthCm * widthCm * heightCm * koliCount) / 1_000_000;
+
+  if (unit === 'm') {
+    return Math.round(l * w * h * k * 1000) / 1000;
+  }
+  const totalM3 = (l * w * h * k) / 1_000_000;
   return Math.round(totalM3 * 1000) / 1000;
 }
 

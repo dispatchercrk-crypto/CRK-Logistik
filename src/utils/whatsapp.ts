@@ -189,12 +189,39 @@ export function buildDriverRealtimeWaMessage(
       asg.driveMedia?.fotoSuhuSerahTerimaUrl
   );
 
+  const depMs = parseFlexibleTimestamp(dep?.timestamp);
+  const delivMs = parseFlexibleTimestamp(deliv?.timestamp || asg.deliveredAt);
+  const hoMs = parseFlexibleTimestamp(ho?.timestamp);
+
+  // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered saja
+  const departToDeliveredMinutes =
+    depMs !== null && delivMs !== null && delivMs >= depMs
+      ? Math.max(0, Math.round((delivMs - depMs) / 60000))
+      : null;
+  const departToDeliveredText =
+    departToDeliveredMinutes !== null
+      ? formatDurationMinutes(departToDeliveredMinutes)
+      : null;
+
+  // Durasi Bongkar / Handover: hitung dari Waktu Delivered sampai Selesai Handover
+  const deliveredToHandoverMinutes =
+    delivMs !== null && hoMs !== null && hoMs >= delivMs
+      ? Math.max(0, Math.round((hoMs - delivMs) / 60000))
+      : null;
+  const deliveredToHandoverText =
+    deliveredToHandoverMinutes !== null
+      ? formatDurationMinutes(deliveredToHandoverMinutes)
+      : null;
+
   const deliveredLines = hasDeliveredInfo
     ? [
         '*--- DATA DELIVERED (SAMPAI DI TUJUAN) ---*',
         `Waktu Sampai (Delivered) : ${formatRealTimeTimestamp(
           deliv?.timestamp || asg.deliveredAt || ho?.timestamp || nowDate
         )}`,
+        departToDeliveredText
+          ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+          : '',
         resolvedKmSampai !== null && resolvedKmSampai >= 0
           ? `Odometer KM Sampai : ${resolvedKmSampai.toLocaleString('id-ID')} km${
               kmDelta !== null
@@ -213,7 +240,7 @@ export function buildDriverRealtimeWaMessage(
             }), Monitor Pendingin (${hasSuhuSampaiFoto ? 'Ada' : '-'})`
           : `Foto Sampai : Odometer (${hasOdoSampaiFoto ? 'Ada' : '-'})`,
         deliv?.catatanSampai ? `Catatan Sampai : ${deliv.catatanSampai}` : '',
-      ]
+      ].filter(Boolean)
     : [];
 
   const handoverLines =
@@ -222,6 +249,12 @@ export function buildDriverRealtimeWaMessage(
           '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
           `Waktu Serah Terima : ${formatRealTimeTimestamp(ho.timestamp)}`,
           `Nama Penerima Serah Terima : ${ho.penerimaNama || '-'}`,
+          deliveredToHandoverText
+            ? `Durasi Bongkar / Handover : ${deliveredToHandoverText}`
+            : '',
+          departToDeliveredText
+            ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+            : '',
           `Foto Bukti Serah Terima : ${
             ho.fotoBuktiSerahTerima || asg.driveMedia?.fotoBuktiSerahTerimaUrl
               ? 'Ada'
@@ -235,7 +268,7 @@ export function buildDriverRealtimeWaMessage(
           ho.catatanSerahTerima
             ? `Catatan Serah Terima : ${ho.catatanSerahTerima}`
             : '',
-        ]
+        ].filter(Boolean)
       : asg.status === TaskStatus.DELIVERED || Boolean(deliv)
       ? [
           '*--- BERITA ACARA SERAH TERIMA (HANDOVER) ---*',
@@ -603,13 +636,9 @@ export function resolveAssignmentStatusTimeline(
       ? formatDurationMinutes(deliveredToHandoverMinutes)
       : null;
 
-  const endMs = hoMs ?? delivMs;
-  const totalTripMinutes =
-    depMs !== null && endMs !== null && endMs >= depMs
-      ? Math.max(0, Math.round((endMs - depMs) / 60000))
-      : null;
-  const totalTripText =
-    totalTripMinutes !== null ? formatDurationMinutes(totalTripMinutes) : null;
+  // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered saja
+  const totalTripMinutes = departToDeliveredMinutes;
+  const totalTripText = departToDeliveredText;
 
   const otd = evaluateAssignmentOtd(asg);
   const jenisKendaraan =
@@ -795,7 +824,12 @@ export function resolveAssignmentStatusTimeline(
               ? `Penerima: ${asg.handoverData.penerimaNama}`
               : '',
             asg.handoverData.catatanSerahTerima || '',
-            totalTripText ? `Total Perjalanan: ${totalTripText}` : '',
+            deliveredToHandoverText
+              ? `Durasi Bongkar: ${deliveredToHandoverText}`
+              : '',
+            departToDeliveredText
+              ? `Durasi Perjalanan: ${departToDeliveredText}`
+              : '',
           ].filter(Boolean)
         : [],
     },
@@ -872,7 +906,12 @@ export function buildFleetStatusHistoryWaMessage(
           }`
         : 'Menunggu serah terima'
     }`,
-    tl.totalTripText ? `   Total Durasi Perjalanan : ${tl.totalTripText}` : '',
+    tl.deliveredToHandoverText
+      ? `   Durasi Bongkar / Handover : ${tl.deliveredToHandoverText}`
+      : '',
+    tl.departToDeliveredText
+      ? `   Durasi Perjalanan (Berangkat -> Delivered) : ${tl.departToDeliveredText}`
+      : '',
   ]
     .filter((line, idx, arr) => {
       if (line !== '') return true;
