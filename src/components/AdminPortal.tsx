@@ -13,6 +13,8 @@ import {
   Download,
   Edit3,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileSpreadsheet,
   FolderOpen,
   HardDrive,
@@ -41,6 +43,7 @@ import {
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
+  AdminViewMaster,
   AppConfig,
   Assignment,
   DriverExpense,
@@ -132,7 +135,7 @@ type AdminMenuTab =
   | 'spreadsheets'
   | 'ubah_pin';
 
-type MasterSubTab = 'drivers' | 'vehicles' | 'routes';
+type MasterSubTab = 'drivers' | 'vehicles' | 'routes' | 'admin_views';
 
 function buildPermanentAppsScriptCode(defaultSpreadsheetId?: string): string {
   const safeSheetId = String(defaultSpreadsheetId || '').trim();
@@ -379,6 +382,16 @@ interface AdminPortalProps {
   ) => void;
   onCopyText: (text: string, label: string) => void;
   onLogout: () => void;
+  isReadOnlyView?: boolean;
+  currentAdminViewUser?: AdminViewMaster | null;
+  adminViews?: AdminViewMaster[];
+  onSaveAdminView?: (
+    mode: 'create' | 'edit',
+    originalId: string,
+    adminView: AdminViewMaster
+  ) => Promise<boolean>;
+  onChangeAdminViewPin?: (id: string, newPin: string) => Promise<boolean>;
+  onDeleteAdminView?: (id: string) => Promise<boolean>;
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({
@@ -425,6 +438,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onNotify,
   onCopyText,
   onLogout,
+  isReadOnlyView = false,
+  currentAdminViewUser = null,
+  adminViews = [],
+  onSaveAdminView,
+  onChangeAdminViewPin,
+  onDeleteAdminView,
 }) => {
   const [activeMenu, setActiveMenu] = useState<AdminMenuTab>(() => {
     if (typeof window !== 'undefined') {
@@ -604,6 +623,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     picName: '',
     picPhone: '',
   });
+
+  // Master Admin View States (Managed by Admin Dispatcher)
+  const [adminViewModalOpen, setAdminViewModalOpen] = useState<boolean>(false);
+  const [editingAdminViewId, setEditingAdminViewId] = useState<string | null>(
+    null
+  );
+  const [adminViewForm, setAdminViewForm] = useState<AdminViewMaster>({
+    id: '',
+    name: '',
+    pin: '',
+    active: true,
+    description: '',
+  });
+  const [adminViewPinModalOpen, setAdminViewPinModalOpen] =
+    useState<boolean>(false);
+  const [pinTargetAdminView, setPinTargetAdminView] =
+    useState<AdminViewMaster | null>(null);
+  const [targetAdminViewNewPin, setTargetAdminViewNewPin] = useState<string>('');
+  const [targetAdminViewConfirmPin, setTargetAdminViewConfirmPin] =
+    useState<string>('');
+  const [showAdminViewPins, setShowAdminViewPins] = useState<
+    Record<string, boolean>
+  >({});
 
   // Spreadsheet Connection Form (synced automatically when permanent binding hydrates)
   const [sheetInput, setSheetInput] = useState<string>(
@@ -1446,6 +1488,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     );
   }, [routes, masterSearch]);
 
+  const filteredAdminViews = useMemo(() => {
+    const q = masterSearch.trim().toLowerCase();
+    if (!q) return adminViews;
+    return adminViews.filter(
+      (v) =>
+        v.id.toLowerCase().includes(q) ||
+        v.name.toLowerCase().includes(q) ||
+        (v.description && v.description.toLowerCase().includes(q))
+    );
+  }, [adminViews, masterSearch]);
+
   return (
     <>
       <div className="no-print min-h-screen bg-slate-50 flex">
@@ -1457,7 +1510,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span className="truncate">CRK LOGISTIK</span>
             </div>
             <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-              Cold Chain Delivery Sistem
+              {isReadOnlyView ? 'Portal Admin View (Read-Only)' : 'Cold Chain Delivery Sistem'}
             </p>
           </div>
 
@@ -1619,10 +1672,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveMenu('ubah_pin')}
-                className="text-left text-[11px] font-semibold text-emerald-700 hover:underline"
-                title="Lihat detail Sesi Aktif Admin Dispatcher"
+                className={`text-left text-[11px] font-semibold hover:underline ${
+                  isReadOnlyView ? 'text-indigo-700' : 'text-emerald-700'
+                }`}
+                title="Lihat detail Sesi Aktif"
               >
-                Sesi Admin Dispatcher: Aktif Permanen · Auto-Refresh
+                {isReadOnlyView
+                  ? `Sesi Admin View: Aktif (${currentAdminViewUser?.id || 'AV-001'})`
+                  : 'Sesi Admin Dispatcher: Aktif Permanen · Auto-Refresh'}
               </button>
               <p className="mt-1 font-medium text-slate-800 truncate">
                 {config.spreadsheetTitle || 'Spreadsheet Belum Dipilih'}
@@ -1669,7 +1726,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <span className="truncate">CRK LOGISTIK</span>
                   </div>
                   <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                    Portal Admin Dispatcher
+                    {isReadOnlyView ? 'Portal Admin View (Read-Only)' : 'Portal Admin Dispatcher'}
                   </p>
                 </div>
                 <button
@@ -1785,6 +1842,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
         {/* Main Workspace Area */}
         <div className="flex min-w-0 flex-1 flex-col">
+          {isReadOnlyView && (
+            <div className="border-b border-indigo-200 bg-gradient-to-r from-indigo-50 via-sky-50 to-indigo-50 px-3.5 py-2 sm:px-8 text-xs font-semibold text-indigo-950 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white shrink-0">
+                  <Eye className="h-3 w-3" />
+                </span>
+                <span>
+                  <strong>Portal Admin View · Mode Monitoring (Read-Only)</strong> — Login sebagai:{' '}
+                  <span className="font-bold text-indigo-900">
+                    {currentAdminViewUser?.name || 'Viewer Operasional'} ({currentAdminViewUser?.id || 'AV-001'})
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-indigo-100 border border-indigo-200 px-2 py-0.5 text-[11px] font-medium text-indigo-800">
+                  Hanya Lihat · Edit Dinonaktifkan
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Sleek Glassmorphic Top Bar (Single 54px Row on Mobile + Notification Bell) */}
           <header className="sticky top-0 z-30 border-b border-slate-200/90 bg-white/92 backdrop-blur-md">
             <div className="flex min-h-[54px] items-center justify-between gap-2 px-3.5 py-2 sm:px-8 sm:py-2.5">
@@ -1938,14 +2016,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       </span>
                       <span className="xl:hidden">Rekap WA</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={openCreateAssignmentModal}
-                      className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 sm:px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Buat Surat Tugas
-                    </button>
+                    {!isReadOnlyView && (
+                      <button
+                        type="button"
+                        onClick={openCreateAssignmentModal}
+                        className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 sm:px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Buat Surat Tugas
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -2607,7 +2687,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           ? 'Buat Surat Tugas pengiriman dingin pertama dengan penomoran berurutan otomatis.'
                           : 'Ubah kata kunci pencarian atau pilih filter status lainnya.'}
                       </p>
-                      {assignments.length === 0 && (
+                      {assignments.length === 0 && !isReadOnlyView && (
                         <button
                           type="button"
                           onClick={openCreateAssignmentModal}
@@ -2902,41 +2982,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                   <Link2 className="h-3.5 w-3.5 text-sky-700" />
                                   Link
                                 </button>
-                                <div className="ml-auto flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditAssignmentModal(asg)}
-                                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
-                                    aria-label={`Edit ${asg.noPenugasan}`}
-                                  >
-                                    <Edit3 className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      triggerConfirm({
-                                        open: true,
-                                        title: 'Hapus Surat Tugas?',
-                                        description:
-                                          'Surat Tugas ini akan dihapus secara permanen dari aplikasi dan lembar Surat_Tugas di Google Spreadsheets.',
-                                        details: [
-                                          `No. Penugasan : ${asg.noPenugasan}`,
-                                          `Driver        : ${asg.driverId} - ${asg.driverName}`,
-                                          `Rute          : ${asg.origin} -> ${asg.destination}`,
-                                        ],
-                                        confirmLabel: 'Hapus Surat Tugas',
-                                        variant: 'danger',
-                                        action: async () => {
-                                          await onDeleteAssignment(asg.id);
-                                        },
-                                      })
-                                    }
-                                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:text-red-600"
-                                    aria-label={`Hapus ${asg.noPenugasan}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
+                                {!isReadOnlyView && (
+                                  <div className="ml-auto flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditAssignmentModal(asg)}
+                                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+                                      aria-label={`Edit ${asg.noPenugasan}`}
+                                    >
+                                      <Edit3 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        triggerConfirm({
+                                          open: true,
+                                          title: 'Hapus Surat Tugas?',
+                                          description:
+                                            'Surat Tugas ini akan dihapus secara permanen dari aplikasi dan lembar Surat_Tugas di Google Spreadsheets.',
+                                          details: [
+                                            `No. Penugasan : ${asg.noPenugasan}`,
+                                            `Driver        : ${asg.driverId} - ${asg.driverName}`,
+                                            `Rute          : ${asg.origin} -> ${asg.destination}`,
+                                          ],
+                                          confirmLabel: 'Hapus Surat Tugas',
+                                          variant: 'danger',
+                                          action: async () => {
+                                            await onDeleteAssignment(asg.id);
+                                          },
+                                        })
+                                      }
+                                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                      aria-label={`Hapus ${asg.noPenugasan}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Expanded Inline Timeline on Mobile */}
@@ -3357,43 +3439,47 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                         <Link2 className="h-3.5 w-3.5 text-sky-700" />
                                         Link
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openEditAssignmentModal(asg)
-                                        }
-                                        className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                                        title="Edit Surat Tugas"
-                                        aria-label={`Edit ${asg.noPenugasan}`}
-                                      >
-                                        <Edit3 className="h-4 w-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          triggerConfirm({
-                                            open: true,
-                                            title: 'Hapus Surat Tugas?',
-                                            description:
-                                              'Surat Tugas ini akan dihapus secara permanen dari aplikasi dan lembar Surat_Tugas di Google Spreadsheets.',
-                                            details: [
-                                              `No. Penugasan : ${asg.noPenugasan}`,
-                                              `Driver        : ${asg.driverId} - ${asg.driverName}`,
-                                              `Rute          : ${asg.origin} -> ${asg.destination}`,
-                                            ],
-                                            confirmLabel: 'Hapus Surat Tugas',
-                                            variant: 'danger',
-                                            action: async () => {
-                                              await onDeleteAssignment(asg.id);
-                                            },
-                                          })
-                                        }
-                                        className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                                        title="Hapus Surat Tugas"
-                                        aria-label={`Hapus ${asg.noPenugasan}`}
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
+                                      {!isReadOnlyView && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openEditAssignmentModal(asg)
+                                            }
+                                            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                            title="Edit Surat Tugas"
+                                            aria-label={`Edit ${asg.noPenugasan}`}
+                                          >
+                                            <Edit3 className="h-4 w-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              triggerConfirm({
+                                                open: true,
+                                                title: 'Hapus Surat Tugas?',
+                                                description:
+                                                  'Surat Tugas ini akan dihapus secara permanen dari aplikasi dan lembar Surat_Tugas di Google Spreadsheets.',
+                                                details: [
+                                                  `No. Penugasan : ${asg.noPenugasan}`,
+                                                  `Driver        : ${asg.driverId} - ${asg.driverName}`,
+                                                  `Rute          : ${asg.origin} -> ${asg.destination}`,
+                                                ],
+                                                confirmLabel: 'Hapus Surat Tugas',
+                                                variant: 'danger',
+                                                action: async () => {
+                                                  await onDeleteAssignment(asg.id);
+                                                },
+                                              })
+                                            }
+                                            className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                            title="Hapus Surat Tugas"
+                                            aria-label={`Hapus ${asg.noPenugasan}`}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -3476,7 +3562,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             {activeMenu === 'master_data' && (
               <div className="space-y-6">
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                  {/* 3 Segmented Master Category Tabs (Swipeable on Mobile) */}
+                  {/* 4 Segmented Master Category Tabs (Swipeable on Mobile) */}
                   <div className="flex items-center gap-1 overflow-x-auto no-scrollbar rounded-xl sm:rounded-lg bg-slate-200/75 p-1 w-full sm:w-auto sm:self-start">
                     <button
                       type="button"
@@ -3511,6 +3597,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     >
                       Master Rute ({routes.length})
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setMasterTab('admin_views')}
+                      className={`min-h-[38px] sm:min-h-0 flex-1 sm:flex-none rounded-lg sm:rounded-md px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 tabular-nums ${
+                        masterTab === 'admin_views'
+                          ? 'bg-white text-indigo-900 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Master Admin View ({adminViews.length})
+                    </button>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -3535,30 +3632,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                           <Link2 className="h-3.5 w-3.5 text-sky-700" />
                           Link Driver
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const nextIdx = drivers.length + 1;
-                            setEditingDriverId(null);
-                            setDriverForm({
-                              id: `DRV-${String(nextIdx).padStart(3, '0')}`,
-                              name: '',
-                              phone: '',
-                              pin: '',
-                              licenseType: 'SIM B1',
-                              active: true,
-                            });
-                            setDriverModalOpen(true);
-                          }}
-                          className="inline-flex min-h-[42px] sm:min-h-0 flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl sm:rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap shrink-0"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Tambah Driver
-                        </button>
+                        {!isReadOnlyView && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextIdx = drivers.length + 1;
+                              setEditingDriverId(null);
+                              setDriverForm({
+                                id: `DRV-${String(nextIdx).padStart(3, '0')}`,
+                                name: '',
+                                phone: '',
+                                pin: '',
+                                licenseType: 'SIM B1',
+                                active: true,
+                              });
+                              setDriverModalOpen(true);
+                            }}
+                            className="inline-flex min-h-[42px] sm:min-h-0 flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl sm:rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap shrink-0"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Tambah Driver
+                          </button>
+                        )}
                       </div>
                     )}
 
-                    {masterTab === 'vehicles' && (
+                    {masterTab === 'vehicles' && !isReadOnlyView && (
                       <button
                         type="button"
                         onClick={() => {
@@ -3581,7 +3680,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       </button>
                     )}
 
-                    {masterTab === 'routes' && (
+                    {masterTab === 'routes' && !isReadOnlyView && (
                       <button
                         type="button"
                         onClick={() => {
@@ -3599,6 +3698,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       >
                         <Plus className="h-3.5 w-3.5" />
                         Tambah Rute Tujuan
+                      </button>
+                    )}
+
+                    {masterTab === 'admin_views' && !isReadOnlyView && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextIdx = adminViews.length + 1;
+                          setEditingAdminViewId(null);
+                          setAdminViewForm({
+                            id: `AV-${String(nextIdx).padStart(3, '0')}`,
+                            name: '',
+                            pin: '123456',
+                            active: true,
+                            description: 'Akses Pantau Dasbor Operasional',
+                          });
+                          setAdminViewModalOpen(true);
+                        }}
+                        className="inline-flex min-h-[42px] sm:min-h-0 w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl sm:rounded-lg bg-indigo-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-800 whitespace-nowrap shrink-0 shadow-sm"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Tambah Admin View
                       </button>
                     )}
                   </div>
@@ -4252,6 +4373,287 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         </div>
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* SUB-TAB 4: MASTER ADMIN VIEW (KHUSUS PEMANTAU DASBOR) */}
+                {masterTab === 'admin_views' && (
+                  <div className="space-y-4">
+                    {/* Notice bar explaining Master Admin View */}
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4 text-xs text-indigo-950">
+                      <div className="flex items-start gap-2.5">
+                        <Eye className="h-4 w-4 shrink-0 text-indigo-700 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-sm text-indigo-900">
+                            Data Master Admin View (Akses Monitoring / Hanya Lihat)
+                          </p>
+                          <p className="mt-0.5 text-indigo-800 leading-relaxed">
+                            Akun pada daftar ini khusus untuk pengguna yang hanya diperbolehkan memantau dasbor aplikasi logistik tanpa hak mengedit/menghapus data apapun. 
+                            Admin Dispatcher berhak penuh menambah akun baru, mengedit data, merubah PIN login kapan saja, maupun menghapus akun viewer.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl sm:rounded-xl border border-slate-200 bg-white">
+                      {filteredAdminViews.length === 0 ? (
+                        <div className="p-10 sm:p-12 text-center">
+                          <Eye className="mx-auto h-8 w-8 text-slate-400" />
+                          <h3 className="mt-2 text-base font-semibold text-slate-900">
+                            Data Master Admin View Kosong
+                          </h3>
+                          <p className="mx-auto mt-1 max-w-md text-sm text-slate-600">
+                            Belum ada akun Admin View. Tekan tombol &quot;+ Tambah Admin View&quot; di atas untuk membuat akun monitoring baru.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Mobile Cards (< md) */}
+                          <div className="divide-y divide-slate-200 md:hidden">
+                            {filteredAdminViews.map((av) => {
+                              const showPin = Boolean(showAdminViewPins[av.id]);
+                              return (
+                                <div key={`m-av-${av.id}`} className="p-4 space-y-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <div className="flex items-center gap-1.5 text-xs">
+                                        <span className="inline-flex items-center gap-1 rounded bg-indigo-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-indigo-800 tabular-nums">
+                                          <Eye className="h-3 w-3" />
+                                          {av.id}
+                                        </span>
+                                        <span aria-hidden="true">·</span>
+                                        <span className="font-bold text-slate-900">
+                                          {av.name}
+                                        </span>
+                                      </div>
+                                      {av.description && (
+                                        <p className="mt-1 text-xs text-slate-600">
+                                          {av.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                        av.active !== false
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                      }`}
+                                    >
+                                      {av.active !== false ? 'Aktif' : 'Nonaktif'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                      <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                                      <span className="font-medium text-slate-700">PIN Login:</span>
+                                      <span className="font-mono font-semibold tracking-wider text-slate-900">
+                                        {showPin ? av.pin : '••••••'}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setShowAdminViewPins((prev) => ({
+                                          ...prev,
+                                          [av.id]: !prev[av.id],
+                                        }))
+                                      }
+                                      className="rounded p-1 text-slate-400 hover:text-slate-700"
+                                      title={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
+                                    >
+                                      {showPin ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                    </button>
+                                  </div>
+
+                                  {!isReadOnlyView && (
+                                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPinTargetAdminView(av);
+                                          setTargetAdminViewNewPin('');
+                                          setTargetAdminViewConfirmPin('');
+                                          setAdminViewPinModalOpen(true);
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                      >
+                                        <KeyRound className="h-3.5 w-3.5" />
+                                        Ubah PIN
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingAdminViewId(av.id);
+                                          setAdminViewForm({ ...av });
+                                          setAdminViewModalOpen(true);
+                                        }}
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                        aria-label={`Edit ${av.name}`}
+                                      >
+                                        <Edit3 className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          triggerConfirm({
+                                            open: true,
+                                            title: 'Hapus Master Admin View?',
+                                            description:
+                                              'Akun Admin View ini akan dihapus. Pengguna tidak akan dapat login lagi menggunakan akun ini.',
+                                            details: [
+                                              `ID Admin View : ${av.id}`,
+                                              `Nama          : ${av.name}`,
+                                            ],
+                                            confirmLabel: 'Hapus Akun',
+                                            variant: 'danger',
+                                            action: async () => {
+                                              if (onDeleteAdminView) {
+                                                await onDeleteAdminView(av.id);
+                                              }
+                                            },
+                                          })
+                                        }
+                                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                        aria-label={`Hapus ${av.name}`}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Desktop Table (md+) */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                                  <th className="px-4 py-3">ID Admin View</th>
+                                  <th className="px-4 py-3">Nama Viewer</th>
+                                  <th className="px-4 py-3">Keterangan</th>
+                                  <th className="px-4 py-3">PIN Login</th>
+                                  <th className="px-4 py-3">Status</th>
+                                  {!isReadOnlyView && (
+                                    <th className="px-4 py-3 text-right">Aksi Dispatcher</th>
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200">
+                                {filteredAdminViews.map((av) => {
+                                  const showPin = Boolean(showAdminViewPins[av.id]);
+                                  return (
+                                    <tr key={av.id} className="hover:bg-slate-50/80">
+                                      <td className="px-4 py-3 font-mono text-xs font-bold text-indigo-900 tabular-nums">
+                                        <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-1 border border-indigo-100">
+                                          <Eye className="h-3 w-3 text-indigo-700" />
+                                          {av.id}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 font-semibold text-slate-900">
+                                        {av.name}
+                                      </td>
+                                      <td className="px-4 py-3 text-xs text-slate-600 max-w-xs truncate">
+                                        {av.description || '-'}
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono text-xs font-semibold tracking-wider text-slate-800">
+                                            {showPin ? av.pin : '••••••'}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setShowAdminViewPins((prev) => ({
+                                                ...prev,
+                                                [av.id]: !prev[av.id],
+                                              }))
+                                            }
+                                            className="rounded p-1 text-slate-400 hover:text-slate-700"
+                                            title={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
+                                          >
+                                            {showPin ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span
+                                          className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                            av.active !== false
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                          }`}
+                                        >
+                                          {av.active !== false ? 'Aktif' : 'Nonaktif'}
+                                        </span>
+                                      </td>
+                                      {!isReadOnlyView && (
+                                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setPinTargetAdminView(av);
+                                              setTargetAdminViewNewPin('');
+                                              setTargetAdminViewConfirmPin('');
+                                              setAdminViewPinModalOpen(true);
+                                            }}
+                                            className="mr-1 inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+                                            title="Ubah PIN Admin View ini"
+                                          >
+                                            <KeyRound className="h-3.5 w-3.5" />
+                                            Ubah PIN
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingAdminViewId(av.id);
+                                              setAdminViewForm({ ...av });
+                                              setAdminViewModalOpen(true);
+                                            }}
+                                            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                            aria-label={`Edit ${av.name}`}
+                                          >
+                                            <Edit3 className="h-4 w-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              triggerConfirm({
+                                                open: true,
+                                                title: 'Hapus Master Admin View?',
+                                                description:
+                                                  'Akun Admin View ini akan dihapus dari database. Pengguna tidak akan dapat login lagi menggunakan akun ini.',
+                                                details: [
+                                                  `ID Admin View : ${av.id}`,
+                                                  `Nama          : ${av.name}`,
+                                                ],
+                                                confirmLabel: 'Hapus Akun',
+                                                variant: 'danger',
+                                                action: async () => {
+                                                  if (onDeleteAdminView) {
+                                                    await onDeleteAdminView(av.id);
+                                                  }
+                                                },
+                                              })
+                                            }
+                                            className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                                            aria-label={`Hapus ${av.name}`}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </button>
+                                        </td>
+                                      )}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -8247,6 +8649,308 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         )}
 
         {/* ================================================================= */}
+        {/* MODAL: MASTER ADMIN VIEW (TAMBAH / EDIT OLEH DISPATCHER)          */}
+        {/* ================================================================= */}
+        {adminViewModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+            <div className="sheet-enter max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 pb-safe shadow-2xl sm:rounded-2xl sm:p-6">
+              <div className="mx-auto mb-3 h-1.5 w-11 rounded-full bg-slate-300 sm:hidden" />
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                    <Eye className="h-4 w-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {editingAdminViewId
+                      ? 'Edit Master Admin View'
+                      : 'Tambah Master Admin View'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdminViewModalOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!adminViewForm.name.trim()) {
+                    onNotify?.('error', 'Nama Wajib Diisi', 'Mohon masukkan nama viewer.');
+                    return;
+                  }
+                  if (!adminViewForm.pin || adminViewForm.pin.length < 4) {
+                    onNotify?.('error', 'PIN Tidak Valid', 'PIN login minimal 4 karakter/angka.');
+                    return;
+                  }
+                  triggerConfirm({
+                    open: true,
+                    title: editingAdminViewId
+                      ? 'Simpan Perubahan Admin View?'
+                      : 'Tambah Master Admin View?',
+                    description:
+                      'Akun Admin View akan disimpan dengan hak akses monitoring (hanya lihat dasbor).',
+                    details: [
+                      `ID Viewer : ${adminViewForm.id.trim().toUpperCase()}`,
+                      `Nama      : ${adminViewForm.name.trim()}`,
+                      `PIN       : ${adminViewForm.pin}`,
+                    ],
+                    confirmLabel: 'Simpan Data',
+                    variant: 'primary',
+                    action: async () => {
+                      if (onSaveAdminView) {
+                        const ok = await onSaveAdminView(
+                          editingAdminViewId ? 'edit' : 'create',
+                          editingAdminViewId || '',
+                          adminViewForm
+                        );
+                        if (ok) setAdminViewModalOpen(false);
+                      }
+                    },
+                  });
+                }}
+                className="mt-4 space-y-4"
+              >
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      ID Admin View *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={adminViewForm.id}
+                      onChange={(e) =>
+                        setAdminViewForm((p) => ({
+                          ...p,
+                          id: e.target.value.toUpperCase(),
+                        }))
+                      }
+                      placeholder="AV-001"
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      PIN Login Viewer *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={adminViewForm.pin}
+                      onChange={(e) =>
+                        setAdminViewForm((p) => ({ ...p, pin: e.target.value }))
+                      }
+                      placeholder="Minimal 4 digit, contoh: 123456"
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm tabular-nums"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Nama Lengkap Viewer *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={adminViewForm.name}
+                      onChange={(e) =>
+                        setAdminViewForm((p) => ({ ...p, name: e.target.value }))
+                      }
+                      placeholder="Contoh: Viewer Operasional Logistik / Supervisor"
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Keterangan / Deskripsi
+                    </label>
+                    <input
+                      type="text"
+                      value={adminViewForm.description || ''}
+                      onChange={(e) =>
+                        setAdminViewForm((p) => ({
+                          ...p,
+                          description: e.target.value,
+                        }))
+                      }
+                      placeholder="Contoh: Akses pantau status pengiriman tim warehouse"
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={adminViewForm.active !== false}
+                        onChange={(e) =>
+                          setAdminViewForm((p) => ({
+                            ...p,
+                            active: e.target.checked,
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-800">
+                        Status Akun Aktif (Bisa Login ke Portal Admin View)
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-3 sm:flex sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAdminViewModalOpen(false)}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-indigo-700 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-800"
+                  >
+                    Simpan Admin View
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* MODAL: UBAH PIN MASTER ADMIN VIEW OLEH ADMIN DISPATCHER           */}
+        {/* ================================================================= */}
+        {adminViewPinModalOpen && pinTargetAdminView && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+            <div className="sheet-enter max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 pb-safe shadow-2xl sm:rounded-2xl sm:p-6">
+              <div className="mx-auto mb-3 h-1.5 w-11 rounded-full bg-slate-300 sm:hidden" />
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                    <KeyRound className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Ubah PIN Admin View
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {pinTargetAdminView.id} — {pinTargetAdminView.name}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminViewPinModalOpen(false);
+                    setPinTargetAdminView(null);
+                  }}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!targetAdminViewNewPin || targetAdminViewNewPin.length < 4) {
+                    onNotify?.(
+                      'error',
+                      'PIN Kurang Panjang',
+                      'PIN baru harus minimal 4 karakter / angka.'
+                    );
+                    return;
+                  }
+                  if (targetAdminViewNewPin !== targetAdminViewConfirmPin) {
+                    onNotify?.(
+                      'error',
+                      'PIN Tidak Cocok',
+                      'Konfirmasi PIN baru tidak sama dengan PIN baru.'
+                    );
+                    return;
+                  }
+
+                  triggerConfirm({
+                    open: true,
+                    title: 'Konfirmasi Ubah PIN Admin View?',
+                    description: `Admin Dispatcher akan memperbarui PIN login untuk ${pinTargetAdminView.name}.`,
+                    details: [
+                      `ID Viewer : ${pinTargetAdminView.id}`,
+                      `PIN Baru  : ${targetAdminViewNewPin}`,
+                    ],
+                    confirmLabel: 'Perbarui PIN',
+                    variant: 'primary',
+                    action: async () => {
+                      if (onChangeAdminViewPin) {
+                        const ok = await onChangeAdminViewPin(
+                          pinTargetAdminView.id,
+                          targetAdminViewNewPin
+                        );
+                        if (ok) {
+                          setAdminViewPinModalOpen(false);
+                          setPinTargetAdminView(null);
+                        }
+                      }
+                    },
+                  });
+                }}
+                className="mt-4 space-y-4"
+              >
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    PIN Baru *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={targetAdminViewNewPin}
+                    onChange={(e) => setTargetAdminViewNewPin(e.target.value)}
+                    placeholder="Masukkan PIN baru"
+                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm tracking-wider"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Konfirmasi PIN Baru *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={targetAdminViewConfirmPin}
+                    onChange={(e) => setTargetAdminViewConfirmPin(e.target.value)}
+                    placeholder="Ketik ulang PIN baru"
+                    className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm tracking-wider"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-3 sm:flex sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminViewPinModalOpen(false);
+                      setPinTargetAdminView(null);
+                    }}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-indigo-700 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-800"
+                  >
+                    Simpan PIN Baru
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================= */}
         {/* MODAL: BAGIKAN LINK KHUSUS DRIVER (UMUM & PERSONAL PER DRIVER)    */}
         {/* ================================================================= */}
         {driverLinkModalOpen && (
@@ -9219,19 +9923,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span className="text-[10px] leading-tight">Performa</span>
             </button>
 
-            <div className="flex items-center justify-center px-1">
-              <button
-                type="button"
-                onClick={openCreateAssignmentModal}
-                className="flex h-11 w-full max-w-[78px] flex-col items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm transition-transform active:scale-[0.96]"
-                aria-label="Buat Surat Tugas Baru"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="text-[10px] font-bold leading-tight">
-                  Buat
-                </span>
-              </button>
-            </div>
+            {!isReadOnlyView ? (
+              <div className="flex items-center justify-center px-1">
+                <button
+                  type="button"
+                  onClick={openCreateAssignmentModal}
+                  className="flex h-11 w-full max-w-[78px] flex-col items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm transition-transform active:scale-[0.96]"
+                  aria-label="Buat Surat Tugas Baru"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-[10px] font-bold leading-tight">
+                    Buat
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center px-1">
+                <div
+                  className="flex h-11 w-full max-w-[78px] flex-col items-center justify-center rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-700 shadow-xs"
+                  title="Portal Admin View · Mode Monitoring (Read-Only)"
+                >
+                  <Eye className="h-4 w-4" />
+                  <span className="text-[9px] font-bold leading-tight">
+                    Pantau
+                  </span>
+                </div>
+              </div>
+            )}
 
             <button
               type="button"

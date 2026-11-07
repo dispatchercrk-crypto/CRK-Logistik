@@ -49,6 +49,16 @@ interface FleetCardRecord {
   balance: number;
 }
 
+interface AdminViewRecord {
+  id: string;
+  name: string;
+  pin: string;
+  active: boolean;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 interface DriverExpenseRecord {
   id: string;
   timestamp: string;
@@ -283,6 +293,7 @@ interface PersistentStore {
   vehicles: VehicleRecord[];
   routes: RouteRecord[];
   fleetCards: FleetCardRecord[];
+  adminViews: AdminViewRecord[];
   assignments: AssignmentRecord[];
   driverExpenses: DriverExpenseRecord[];
   notifications: NotificationRecord[];
@@ -353,6 +364,17 @@ function getInitialStore(): PersistentStore {
     vehicles: [],
     routes: [],
     fleetCards: [],
+    adminViews: [
+      {
+        id: 'AV-001',
+        name: 'Viewer Operasional Logistik',
+        pin: '123456',
+        active: true,
+        description: 'Akses Pantau Dashboard Logistik Saja (Read-Only)',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ],
     assignments: [],
     driverExpenses: [],
     notifications: [],
@@ -497,6 +519,30 @@ function loadStore(): PersistentStore {
             balance: Number(fc.balance) || 0,
           }))
         : [],
+      adminViews:
+        Array.isArray(parsed.adminViews) && parsed.adminViews.length > 0
+          ? parsed.adminViews.map((av) => ({
+              id: String(av.id || '').trim().toUpperCase(),
+              name: String(av.name || '').trim(),
+              pin: String(av.pin || '123456').trim(),
+              active: av.active !== false,
+              description: av.description
+                ? String(av.description).trim()
+                : 'Viewer Dashboard Monitoring Saja',
+              createdAt: av.createdAt || new Date().toISOString(),
+              updatedAt: av.updatedAt || new Date().toISOString(),
+            }))
+          : [
+              {
+                id: 'AV-001',
+                name: 'Viewer Operasional Logistik',
+                pin: '123456',
+                active: true,
+                description: 'Akses Pantau Dashboard Logistik Saja (Read-Only)',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
       assignments: Array.isArray(parsed.assignments)
         ? parsed.assignments.map((a) => ({
             ...a,
@@ -1357,6 +1403,7 @@ function buildPublicState() {
     vehicles: store.vehicles,
     routes: store.routes,
     fleetCards: store.fleetCards || [],
+    adminViews: store.adminViews || [],
     assignments: sortedAssignments,
     driverExpenses: sortedDriverExpenses,
     notifications: store.notifications,
@@ -2451,6 +2498,69 @@ async function startServer() {
     res.json({
       success: true,
       isDefaultPin: store.isDefaultPin,
+    });
+  });
+
+  // Admin View Login (Read-Only Portal)
+  app.post('/api/auth/admin-view', (req, res) => {
+    const enteredId = String(req.body?.id || '').trim().toUpperCase();
+    const enteredPin = String(req.body?.pin || '').trim();
+
+    if (!enteredPin) {
+      res.status(400).json({ error: 'Masukkan PIN Admin View.' });
+      return;
+    }
+
+    if (!Array.isArray(store.adminViews) || store.adminViews.length === 0) {
+      store.adminViews = [
+        {
+          id: 'AV-001',
+          name: 'Viewer Operasional Logistik',
+          pin: '123456',
+          active: true,
+          description: 'Akses Pantau Dashboard Logistik Saja (Read-Only)',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      saveStore(store);
+    }
+
+    let matched: AdminViewRecord | undefined;
+    if (enteredId) {
+      matched = store.adminViews.find(
+        (v) => v.id.toUpperCase() === enteredId
+      );
+      if (matched && matched.active === false) {
+        res.status(403).json({
+          error: `Akun Admin View ${matched.name} (${matched.id}) berstatus nonaktif. Hubungi Admin Dispatcher.`,
+        });
+        return;
+      }
+    } else {
+      matched = store.adminViews.find(
+        (v) => v.active !== false && v.pin.trim() === enteredPin
+      );
+    }
+
+    if (!matched) {
+      res.status(401).json({ error: 'ID Admin View tidak ditemukan atau PIN salah.' });
+      return;
+    }
+
+    if (matched.pin.trim() !== enteredPin) {
+      res.status(401).json({ error: 'PIN Admin View tidak sesuai. Silakan hubungi Admin Dispatcher.' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      adminView: {
+        id: matched.id,
+        name: matched.name,
+        active: matched.active,
+        description: matched.description || 'Viewer Dashboard Monitoring Saja',
+      },
     });
   });
 
@@ -6483,6 +6593,196 @@ async function startServer() {
     });
     res.json({
       success: true,
+      state: publicState,
+    });
+  });
+
+  // Master Admin View (Management by Admin Dispatcher)
+  app.post('/api/master/admin-views', async (req, res) => {
+    const rawId = String(req.body?.id || '').trim().toUpperCase();
+    const name = String(req.body?.name || '').trim();
+    const pin = String(req.body?.pin || '123456').trim();
+    const description = String(
+      req.body?.description || 'Viewer Dashboard Monitoring Saja'
+    ).trim();
+    const active = req.body?.active !== false;
+
+    if (!name) {
+      res.status(400).json({ error: 'Nama Admin View wajib diisi.' });
+      return;
+    }
+
+    if (pin.length < 4) {
+      res
+        .status(400)
+        .json({ error: 'PIN Admin View minimal 4 digit karakter/angka.' });
+      return;
+    }
+
+    if (!Array.isArray(store.adminViews)) store.adminViews = [];
+
+    let id = rawId;
+    if (!id) {
+      const count = store.adminViews.length + 1;
+      id = `AV-${String(count).padStart(3, '0')}`;
+    }
+
+    if (store.adminViews.some((v) => v.id.toUpperCase() === id.toUpperCase())) {
+      res.status(409).json({ error: `ID Admin View ${id} sudah terdaftar di Master Data.` });
+      return;
+    }
+
+    const created: AdminViewRecord = {
+      id,
+      name,
+      pin,
+      active,
+      description,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    store.adminViews.push(created);
+    saveStore(store);
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.status(201).json({
+      success: true,
+      adminView: created,
+      state: publicState,
+    });
+  });
+
+  app.put('/api/master/admin-views/:id', async (req, res) => {
+    const targetId = String(req.params.id || '').trim().toUpperCase();
+    if (!Array.isArray(store.adminViews)) store.adminViews = [];
+
+    const idx = store.adminViews.findIndex((v) => v.id.toUpperCase() === targetId);
+    if (idx === -1) {
+      res
+        .status(404)
+        .json({ error: `Admin View dengan ID ${targetId} tidak ditemukan.` });
+      return;
+    }
+
+    const existing = store.adminViews[idx];
+    const name = req.body?.name !== undefined ? String(req.body.name).trim() : existing.name;
+    const pin = req.body?.pin !== undefined ? String(req.body.pin).trim() : existing.pin;
+    const description =
+      req.body?.description !== undefined
+        ? String(req.body.description).trim()
+        : existing.description;
+    const active =
+      req.body?.active !== undefined ? Boolean(req.body.active) : existing.active;
+
+    if (!name) {
+      res.status(400).json({ error: 'Nama Admin View tidak boleh kosong.' });
+      return;
+    }
+    if (pin && pin.length < 4) {
+      res
+        .status(400)
+        .json({ error: 'PIN Admin View minimal 4 digit karakter/angka.' });
+      return;
+    }
+
+    const updated: AdminViewRecord = {
+      ...existing,
+      name,
+      pin: pin || existing.pin,
+      description,
+      active,
+      updatedAt: new Date().toISOString(),
+    };
+
+    store.adminViews[idx] = updated;
+    saveStore(store);
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.json({
+      success: true,
+      adminView: updated,
+      state: publicState,
+    });
+  });
+
+  // Quick Change / Reset PIN Admin View by Admin Dispatcher
+  app.put('/api/master/admin-views/:id/pin', async (req, res) => {
+    const targetId = String(req.params.id || '').trim().toUpperCase();
+    const newPin = String(req.body?.pin || req.body?.newPin || '').trim();
+
+    if (!newPin || newPin.length < 4) {
+      res
+        .status(400)
+        .json({ error: 'PIN baru minimal 4 digit karakter/angka.' });
+      return;
+    }
+
+    if (!Array.isArray(store.adminViews)) store.adminViews = [];
+    const item = store.adminViews.find((v) => v.id.toUpperCase() === targetId);
+    if (!item) {
+      res
+        .status(404)
+        .json({ error: `Admin View dengan ID ${targetId} tidak ditemukan.` });
+      return;
+    }
+
+    item.pin = newPin;
+    item.updatedAt = new Date().toISOString();
+    saveStore(store);
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.json({
+      success: true,
+      id: item.id,
+      adminView: item,
+      state: publicState,
+      message: `PIN Admin View ${item.name} (${item.id}) berhasil diperbarui menjadi ${newPin}.`,
+    });
+  });
+
+  app.delete('/api/master/admin-views/:id', async (req, res) => {
+    const targetId = String(req.params.id || '').trim().toUpperCase();
+    if (!Array.isArray(store.adminViews)) store.adminViews = [];
+
+    const initialLen = store.adminViews.length;
+    store.adminViews = store.adminViews.filter(
+      (v) => v.id.toUpperCase() !== targetId
+    );
+
+    if (store.adminViews.length === initialLen) {
+      res
+        .status(404)
+        .json({ error: `Admin View dengan ID ${targetId} tidak ditemukan.` });
+      return;
+    }
+
+    saveStore(store);
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.json({
+      success: true,
+      id: targetId,
       state: publicState,
     });
   });

@@ -1,4 +1,5 @@
 import {
+  AdminViewMaster,
   AppStateResponse,
   Assignment,
   DriverExpense,
@@ -47,6 +48,8 @@ export interface SavedPortalSession {
   role: UserRole;
   driverId?: string;
   driverSnapshot?: DriverMaster;
+  adminViewId?: string;
+  adminViewSnapshot?: AdminViewMaster;
   startedAtMs?: number;
   savedAtMs?: number;
 }
@@ -328,6 +331,22 @@ function parseSessionObject(
       role: UserRole.DRIVER,
       driverId: cleanId,
       driverSnapshot: snap,
+      startedAtMs: parsed.startedAtMs || parsed.savedAtMs,
+      savedAtMs: parsed.savedAtMs,
+    };
+  }
+  if (parsed.role === UserRole.ADMIN_VIEW) {
+    const cleanId = String(parsed.adminViewId || '').trim();
+    const snap =
+      parsed.adminViewSnapshot &&
+      typeof parsed.adminViewSnapshot === 'object' &&
+      parsed.adminViewSnapshot.id
+        ? (parsed.adminViewSnapshot as AdminViewMaster)
+        : undefined;
+    return {
+      role: UserRole.ADMIN_VIEW,
+      adminViewId: cleanId,
+      adminViewSnapshot: snap,
       startedAtMs: parsed.startedAtMs || parsed.savedAtMs,
       savedAtMs: parsed.savedAtMs,
     };

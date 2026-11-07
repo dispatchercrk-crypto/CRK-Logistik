@@ -10,6 +10,7 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  Fuel,
   Gauge,
   History,
   Image as ImageIcon,
@@ -17,6 +18,7 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Maximize2,
   MessageSquareShare,
   Navigation,
   PackageCheck,
@@ -526,7 +528,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     [myAssignments]
   );
 
-  // Form Input Pengeluaran hanya aktif (ditampilkan) ketika ada Surat Tugas untuk Driver ini,
+  // Form Input Pengeluaran hanya aktif ketika ada Surat Tugas untuk Driver ini,
   // dan hanya bisa diisi setelah seluruh Surat Tugas yang diberikan telah diselesaikan.
   const hasSuratTugas = myAssignments.length > 0;
   const canFillExpenseForm =
@@ -555,11 +557,17 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     completedTasks.length > 0 &&
     activeTasks.length === 0;
 
+  // Menu Pengeluaran disembunyikan ketika TIDAK ADA Surat Tugas Aktif
+  const showExpenseInputMenu =
+    activeTasks.length > 0 || (hasUnreportedCompletedTasks && !isCurrentBatchReported);
+
+  const [riwayatSubTab, setRiwayatSubTab] = useState<'tugas' | 'pengeluaran'>('tugas');
+
   useEffect(() => {
-    if (!hasSuratTugas && activeTab === 'pengeluaran') {
-      setActiveTab('aktif');
+    if (!showExpenseInputMenu && activeTab === 'pengeluaran') {
+      setActiveTab('riwayat');
     }
-  }, [hasSuratTugas, activeTab]);
+  }, [showExpenseInputMenu, activeTab]);
 
   const myNotifications = useMemo(
     () =>
@@ -2784,7 +2792,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             >
               Tugas Aktif ({activeTasks.length})
             </button>
-            {hasSuratTugas && (
+            {showExpenseInputMenu && (
               <button
                 type="button"
                 onClick={() => setActiveTab('pengeluaran')}
@@ -2795,7 +2803,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                 }`}
               >
                 <Receipt className="h-3.5 w-3.5 text-sky-700" />
-                Form Input Pengeluaran ({mySubmittedExpenses.length})
+                Form Input Pengeluaran
               </button>
             )}
             <button
@@ -4121,7 +4129,234 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         {/* ===================================================== */}
         {activeTab === 'riwayat' && (
           <div className="mt-6 space-y-4">
-            {completedTasks.length === 0 ? (
+            {/* Sub-tab switcher: Riwayat Tugas vs Riwayat Pengeluaran Saya */}
+            <div className="flex rounded-xl bg-slate-100 p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setRiwayatSubTab('tugas')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-colors ${
+                  riwayatSubTab === 'tugas'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Truck className="h-3.5 w-3.5 text-sky-700" />
+                <span>Riwayat Surat Tugas ({completedTasks.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRiwayatSubTab('pengeluaran')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-lg transition-colors ${
+                  riwayatSubTab === 'pengeluaran'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Receipt className="h-3.5 w-3.5 text-emerald-700" />
+                <span>Riwayat Pengeluaran ({mySubmittedExpenses.length})</span>
+              </button>
+            </div>
+
+            {riwayatSubTab === 'pengeluaran' ? (
+              /* Riwayat Pengeluaran Saya */
+              <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xs sm:p-6 space-y-4">
+                <div className="flex flex-col gap-1 border-b border-slate-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-sm font-bold tracking-tight text-slate-900 sm:text-base flex items-center gap-2">
+                      <Receipt className="h-4 w-4 text-emerald-700" />
+                      Riwayat Laporan Pengeluaran Saya
+                    </h2>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Rekap laporan pengeluaran BBM &amp; Tol yang telah dikirimkan ke database Spreadsheet.
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                    Total {mySubmittedExpenses.length} Laporan
+                  </span>
+                </div>
+
+                {mySubmittedExpenses.length === 0 ? (
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-8 text-center text-xs text-slate-500 space-y-2">
+                    <Receipt className="mx-auto h-8 w-8 text-slate-400" />
+                    <p>Belum ada riwayat laporan pengeluaran BBM &amp; Tol yang tersimpan.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {mySubmittedExpenses.map((exp) => {
+                      const bbmReceiptSrc =
+                        exp.fotoStrukBbm || exp.fotoStrukBbmUrl || '';
+                      const tolReceiptSrc =
+                        exp.fotoStrukTol || exp.fotoStrukTolUrl || '';
+                      return (
+                        <div
+                          key={exp.id}
+                          className="flex flex-col gap-3 py-4 first:pt-1 last:pb-1 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                              <span className="font-mono font-bold text-slate-900 tabular-nums">
+                                {exp.id}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-mono tabular-nums">
+                                {formatRealTimeTimestamp(
+                                  exp.timestamp || exp.tanggal
+                                )}
+                              </span>
+                              {exp.plateNumber && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="font-mono font-semibold text-slate-800">
+                                    {exp.plateNumber}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+                              <CreditCard className="h-3.5 w-3.5 text-sky-700" />
+                              <span>Kartu Fleet Card:</span>
+                              <span className="font-mono font-bold text-slate-900 tabular-nums">
+                                {exp.fleetCardNumber}
+                              </span>
+                            </div>
+
+                            {(exp.tanggalPengiriman || exp.tujuanPengiriman) && (
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                <span>
+                                  Tgl Pengiriman:{' '}
+                                  <strong className="font-mono text-slate-900 tabular-nums">
+                                    {exp.tanggalPengiriman || exp.tanggal}
+                                  </strong>
+                                </span>
+                                {exp.tujuanPengiriman && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>
+                                      Tujuan:{' '}
+                                      <strong className="text-slate-900">
+                                        {exp.tujuanPengiriman}
+                                      </strong>
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                              <span>
+                                Pembelian BBM:{' '}
+                                <strong className="font-mono text-slate-900 tabular-nums">
+                                  {formatIdrCurrency(exp.totalPengirimanBbm)}
+                                </strong>
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span>
+                                Tol:{' '}
+                                <strong className="font-mono text-slate-900 tabular-nums">
+                                  {formatIdrCurrency(exp.totalPengeluaranTol)}
+                                </strong>
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span>
+                                Total:{' '}
+                                <strong className="font-mono text-emerald-700 tabular-nums">
+                                  {formatIdrCurrency(exp.totalPengeluaran)}
+                                </strong>
+                              </span>
+                            </div>
+
+                            {exp.catatan && (
+                              <p className="text-xs text-slate-500">
+                                Catatan: {exp.catatan}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Foto Struk Pratinjau Langsung */}
+                          <div className="flex flex-col gap-2 shrink-0 sm:items-end">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {bbmReceiptSrc && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpenseReceiptPreview({
+                                      title: `Struk Pengeluaran BBM · ${exp.id}`,
+                                      subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
+                                        exp.totalPengirimanBbm
+                                      )}`,
+                                      src: bbmReceiptSrc,
+                                    })
+                                  }
+                                  className="group relative flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/70 p-1.5 pr-3 text-left transition-all hover:bg-sky-100 hover:border-sky-300 shadow-2xs"
+                                  title="Klik untuk memperbesar Foto Struk BBM"
+                                >
+                                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                    <img
+                                      src={bbmReceiptSrc}
+                                      alt="Pratinjau Struk BBM"
+                                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Maximize2 className="h-3.5 w-3.5 text-white" />
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="flex items-center gap-1 text-[11px] font-bold text-sky-950">
+                                      <Fuel className="h-3 w-3 text-sky-700" />
+                                      Struk BBM
+                                    </p>
+                                    <p className="font-mono text-[10px] text-sky-800 tabular-nums">
+                                      {formatIdrCurrency(exp.totalPengirimanBbm)}
+                                    </p>
+                                  </div>
+                                </button>
+                              )}
+                              {tolReceiptSrc && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpenseReceiptPreview({
+                                      title: `Struk Pengeluaran Tol · ${exp.id}`,
+                                      subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
+                                        exp.totalPengeluaranTol
+                                      )}`,
+                                      src: tolReceiptSrc,
+                                    })
+                                  }
+                                  className="group relative flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-1.5 pr-3 text-left transition-all hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs"
+                                  title="Klik untuk memperbesar Foto Struk Tol"
+                                >
+                                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                    <img
+                                      src={tolReceiptSrc}
+                                      alt="Pratinjau Struk Tol"
+                                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <Maximize2 className="h-3.5 w-3.5 text-white" />
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="flex items-center gap-1 text-[11px] font-bold text-emerald-950">
+                                      <CreditCard className="h-3 w-3 text-emerald-700" />
+                                      Struk Tol
+                                    </p>
+                                    <p className="font-mono text-[10px] text-emerald-800 tabular-nums">
+                                      {formatIdrCurrency(exp.totalPengeluaranTol)}
+                                    </p>
+                                  </div>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : completedTasks.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
                 <CheckCircle2 className="mx-auto h-8 w-8 text-slate-400" />
                 <h2 className="mt-3 text-base font-semibold text-slate-900">
@@ -5070,43 +5305,81 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          {bbmReceiptSrc && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpenseReceiptPreview({
-                                  title: `Struk Pengeluaran BBM · ${exp.id}`,
-                                  subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
-                                    exp.totalPengirimanBbm
-                                  )}`,
-                                  src: bbmReceiptSrc,
-                                })
-                              }
-                              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5 text-sky-700" />
-                              Struk BBM
-                            </button>
-                          )}
-                          {tolReceiptSrc && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpenseReceiptPreview({
-                                  title: `Struk Pengeluaran Tol · ${exp.id}`,
-                                  subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
-                                    exp.totalPengeluaranTol
-                                  )}`,
-                                  src: tolReceiptSrc,
-                                })
-                              }
-                              className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-100"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5 text-emerald-700" />
-                              Struk Tol
-                            </button>
-                          )}
+                        <div className="flex flex-col gap-2 shrink-0 sm:items-end">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {bbmReceiptSrc && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpenseReceiptPreview({
+                                    title: `Struk Pengeluaran BBM · ${exp.id}`,
+                                    subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
+                                      exp.totalPengirimanBbm
+                                    )}`,
+                                    src: bbmReceiptSrc,
+                                  })
+                                }
+                                className="group relative flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/70 p-1.5 pr-3 text-left transition-all hover:bg-sky-100 hover:border-sky-300 shadow-2xs"
+                                title="Klik untuk memperbesar Foto Struk BBM"
+                              >
+                                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                  <img
+                                    src={bbmReceiptSrc}
+                                    alt="Pratinjau Struk BBM"
+                                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Maximize2 className="h-3.5 w-3.5 text-white" />
+                                  </div>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="flex items-center gap-1 text-[11px] font-bold text-sky-950">
+                                    <Fuel className="h-3 w-3 text-sky-700" />
+                                    Struk BBM
+                                  </p>
+                                  <p className="font-mono text-[10px] text-sky-800 tabular-nums">
+                                    {formatIdrCurrency(exp.totalPengirimanBbm)}
+                                  </p>
+                                </div>
+                              </button>
+                            )}
+                            {tolReceiptSrc && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpenseReceiptPreview({
+                                    title: `Struk Pengeluaran Tol · ${exp.id}`,
+                                    subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
+                                      exp.totalPengeluaranTol
+                                    )}`,
+                                    src: tolReceiptSrc,
+                                  })
+                                }
+                                className="group relative flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-1.5 pr-3 text-left transition-all hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs"
+                                title="Klik untuk memperbesar Foto Struk Tol"
+                              >
+                                <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                  <img
+                                    src={tolReceiptSrc}
+                                    alt="Pratinjau Struk Tol"
+                                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                  />
+                                  <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Maximize2 className="h-3.5 w-3.5 text-white" />
+                                  </div>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="flex items-center gap-1 text-[11px] font-bold text-emerald-950">
+                                    <CreditCard className="h-3 w-3 text-emerald-700" />
+                                    Struk Tol
+                                  </p>
+                                  <p className="font-mono text-[10px] text-emerald-800 tabular-nums">
+                                    {formatIdrCurrency(exp.totalPengeluaranTol)}
+                                  </p>
+                                </div>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -5221,7 +5494,7 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
             )}
           </button>
 
-          {hasSuratTugas && (
+          {showExpenseInputMenu && (
             <button
               type="button"
               onClick={() => setActiveTab('pengeluaran')}
@@ -5237,11 +5510,6 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     activeTab === 'pengeluaran' ? 'text-sky-700' : ''
                   }`}
                 />
-                {mySubmittedExpenses.length > 0 && (
-                  <span className="ml-1 font-mono text-[10px] font-bold text-sky-700 tabular-nums">
-                    {mySubmittedExpenses.length}
-                  </span>
-                )}
               </div>
               <span className="text-[11px] leading-tight">Pengeluaran</span>
               {activeTab === 'pengeluaran' && (

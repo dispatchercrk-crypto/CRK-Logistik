@@ -35,6 +35,17 @@ export function isActiveTaskStatus(
 export enum UserRole {
   DRIVER = 'DRIVER',
   ADMIN = 'ADMIN',
+  ADMIN_VIEW = 'ADMIN_VIEW',
+}
+
+export interface AdminViewMaster {
+  id: string; // ID Admin View, e.g. AV-001
+  name: string; // Nama / Label Admin View (e.g. Manajemen Logistik)
+  pin: string; // PIN Admin View (dapat diubah oleh Admin Dispatcher)
+  active: boolean; // Status Aktif
+  description?: string; // Keterangan hak akses (e.g. Viewer Dashboard Monitoring Saja)
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type WhatsAppTargetMode = 'GROUP' | 'DIRECT' | 'DRIVER';
@@ -267,6 +278,7 @@ export interface AppStateResponse {
   assignments: Assignment[];
   notifications: WhatsAppNotificationLog[];
   config: AppConfig;
+  adminViews?: AdminViewMaster[];
 }
 
 export interface ToastMessage {

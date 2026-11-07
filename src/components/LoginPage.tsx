@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
+  AdminViewMaster,
   AppConfig,
   Assignment,
   DriverMaster,
@@ -33,6 +34,7 @@ interface LoginPageProps {
   vehicles: VehicleMaster[];
   assignments: Assignment[];
   config: AppConfig;
+  adminViews?: AdminViewMaster[];
   googleUser: User | null;
   hasGoogleToken: boolean;
   isSyncing: boolean;
@@ -44,6 +46,7 @@ interface LoginPageProps {
   onGoogleLogin: () => Promise<void>;
   onDriverLoginSuccess: (driver: DriverMaster) => void;
   onAdminLoginSuccess: () => void;
+  onAdminViewLoginSuccess?: (adminView: AdminViewMaster) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
@@ -51,6 +54,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   vehicles,
   assignments,
   config,
+  adminViews = [],
   googleUser,
   initialDriverMode = false,
   initialDriverId = '',
@@ -58,6 +62,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   embeddedDriver,
   onDriverLoginSuccess,
   onAdminLoginSuccess,
+  onAdminViewLoginSuccess,
 }) => {
   const isVerifiedAdminGoogleSession = Boolean(
     googleUser?.email &&
@@ -75,6 +80,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [selectedDriverId, setSelectedDriverId] = useState<string>('');
   const [driverPin, setDriverPin] = useState<string>('');
   const [adminPin, setAdminPin] = useState<string>('');
+  const [selectedAdminViewId, setSelectedAdminViewId] = useState<string>('');
+  const [adminViewPin, setAdminViewPin] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -115,6 +122,36 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
     return list.sort((a, b) => a.id.localeCompare(b.id, 'id', { numeric: true }));
   }, [drivers, embeddedDriver]);
+
+  const activeAdminViews = useMemo(() => {
+    const list = Array.isArray(adminViews)
+      ? adminViews.filter((av) => av.active !== false)
+      : [];
+    if (list.length === 0) {
+      list.push({
+        id: 'AV-001',
+        name: 'Viewer Operasional Logistik',
+        pin: '123456',
+        active: true,
+        description: 'Akses Pantau Dashboard Logistik Saja (Read-Only)',
+      });
+    }
+    return list;
+  }, [adminViews]);
+
+  useEffect(() => {
+    if (!selectedAdminViewId && activeAdminViews.length > 0) {
+      setSelectedAdminViewId(activeAdminViews[0].id);
+    }
+  }, [activeAdminViews, selectedAdminViewId]);
+
+  const selectedAdminViewObj = useMemo(
+    () =>
+      activeAdminViews.find((av) => av.id === selectedAdminViewId) ||
+      activeAdminViews[0] ||
+      null,
+    [activeAdminViews, selectedAdminViewId]
+  );
 
   const linkedAssignment = useMemo(() => {
     if (!initialTaskKey.trim()) return null;
@@ -274,6 +311,59 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
+  const handleAdminViewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    const enteredPin = adminViewPin.trim();
+    if (!enteredPin) {
+      setErrorMessage('Masukkan PIN Admin View.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await safeApiFetch<{
+        success?: boolean;
+        adminView?: AdminViewMaster;
+        error?: string;
+      }>('/api/auth/admin-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selectedAdminViewId.trim() || undefined,
+          pin: enteredPin,
+        }),
+      });
+
+      if (res.ok && res.data?.success && res.data.adminView) {
+        onAdminViewLoginSuccess?.(res.data.adminView);
+        return;
+      }
+
+      if (res.isHtmlResponse || res.networkFailed) {
+        const localTarget = activeAdminViews.find(
+          (av) =>
+            (!selectedAdminViewId ||
+              av.id.toUpperCase() === selectedAdminViewId.toUpperCase()) &&
+            av.pin.trim() === enteredPin
+        );
+        if (localTarget) {
+          onAdminViewLoginSuccess?.(localTarget);
+          return;
+        }
+      }
+
+      setErrorMessage(res.errorMessage || 'PIN Admin View tidak sesuai.');
+    } catch {
+      setErrorMessage(
+        'Gagal menghubungi server. Periksa koneksi jaringan Anda.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Clean Single-Row Top Bar (3-Zone Contract) */}
@@ -423,16 +513,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <p className="text-xs font-semibold text-sky-800">
                 {driverOnlyView
                   ? 'Portal Akses Khusus Driver · CRK Logistik'
+                  : selectedRole === UserRole.ADMIN_VIEW
+                  ? 'Portal Monitoring Read-Only · CRK Logistik'
                   : 'Aplikasi Rantai Pengiriman Dingin'}
               </p>
               <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {driverOnlyView
                   ? 'Masuk Portal Driver'
+                  : selectedRole === UserRole.ADMIN_VIEW
+                  ? 'Portal Admin View (Read-Only)'
                   : 'Masuk ke Sistem Operasional'}
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">
                 {driverOnlyView
                   ? 'Pilih ID Driver Anda untuk melaporkan Keberangkatan, Konfirmasi Delivered, dan Serah Terima.'
+                  : selectedRole === UserRole.ADMIN_VIEW
+                  ? 'Pantau dashboard operasional, grafik performa SLA countdown, dan status armada secara real-time (mode lihat saja).'
                   : 'Pilih peran akses Anda pada CRK LOGISTIK DELIVERY SISTEM.'}
               </p>
             </div>
@@ -460,21 +556,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
             {/* Segmented Role Switcher (hidden by default when opened via Link Khusus Driver) */}
             {!driverOnlyView && (
-              <div className="mt-5 grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1.5 sm:mt-6">
+              <div className="mt-5 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1.5 sm:mt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedRole(UserRole.DRIVER);
                     setErrorMessage('');
                   }}
-                  className={`flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 sm:px-4 sm:text-sm ${
+                  className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 sm:px-3 sm:text-sm ${
                     selectedRole === UserRole.DRIVER
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   <Truck className="h-4 w-4 shrink-0" />
-                  Role Driver
+                  <span className="truncate">Driver</span>
                 </button>
                 <button
                   type="button"
@@ -482,14 +578,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     setSelectedRole(UserRole.ADMIN);
                     setErrorMessage('');
                   }}
-                  className={`flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 sm:px-4 sm:text-sm ${
+                  className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 sm:px-3 sm:text-sm ${
                     selectedRole === UserRole.ADMIN
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   <ShieldCheck className="h-4 w-4 shrink-0" />
-                  Admin Dispatcher
+                  <span className="truncate">Dispatcher</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedRole(UserRole.ADMIN_VIEW);
+                    setErrorMessage('');
+                  }}
+                  className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 sm:px-3 sm:text-sm ${
+                    selectedRole === UserRole.ADMIN_VIEW
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Eye className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Admin View</span>
                 </button>
               </div>
             )}
@@ -651,7 +762,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   </div>
                 )}
               </form>
-            ) : (
+            ) : selectedRole === UserRole.ADMIN ? (
               /* ADMIN DISPATCHER LOGIN FORM */
               <form onSubmit={handleAdminSubmit} className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
                 <div>
@@ -706,6 +817,117 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   {submitting
                     ? 'Memverifikasi PIN...'
                     : 'Masuk Portal Dispatcher'}
+                </button>
+              </form>
+            ) : (
+              /* ADMIN VIEW LOGIN FORM (READ-ONLY) */
+              <form onSubmit={handleAdminViewSubmit} className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
+                <div>
+                  <label
+                    htmlFor="admin-view-select"
+                    className="block text-sm font-semibold text-slate-800"
+                  >
+                    Pilih Akun Admin View
+                  </label>
+                  <div className="relative mt-1.5">
+                    <select
+                      id="admin-view-select"
+                      value={selectedAdminViewId}
+                      onChange={(e) => {
+                        setSelectedAdminViewId(e.target.value);
+                        setErrorMessage('');
+                      }}
+                      className="min-h-[46px] w-full appearance-none rounded-xl border border-slate-300 bg-white py-2.5 pl-3.5 pr-10 text-sm font-medium text-slate-900 transition-colors focus:border-slate-900 focus:outline-none"
+                    >
+                      {activeAdminViews.map((av) => (
+                        <option key={av.id} value={av.id}>
+                          {av.id} — {av.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  </div>
+
+                  {selectedAdminViewObj && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <span className="font-semibold text-slate-900">
+                        {selectedAdminViewObj.name}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums">
+                        {selectedAdminViewObj.id}
+                      </span>
+                      {selectedAdminViewObj.description && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="text-slate-500">
+                            {selectedAdminViewObj.description}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-view-pin-input"
+                    className="block text-sm font-semibold text-slate-800"
+                  >
+                    PIN Admin View
+                  </label>
+                  <div className="relative mt-1.5">
+                    <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="admin-view-pin-input"
+                      type={showPin ? 'text' : 'password'}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={adminViewPin}
+                      onChange={(e) => setAdminViewPin(e.target.value)}
+                      placeholder="Masukkan PIN Admin View"
+                      className="min-h-[46px] w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-11 font-mono text-sm text-slate-900 tabular-nums transition-colors focus:border-slate-900 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPin((prev) => !prev)}
+                      className="absolute right-2 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      aria-label={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
+                    >
+                      {showPin ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50/70 p-3 text-xs text-sky-900 space-y-1">
+                    <p className="font-semibold flex items-center gap-1.5 text-sky-950">
+                      <Eye className="h-3.5 w-3.5 text-sky-700" />
+                      Mode Monitoring Read-Only
+                    </p>
+                    <p className="text-[11px] text-sky-800 leading-relaxed">
+                      Anda dapat melihat seluruh Dashboard operasional, grafik SLA countdown, dan status tugas, tanpa izin pengeditan data.
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      PIN awal standar:{' '}
+                      <span className="font-mono font-semibold text-slate-900 tabular-nums">
+                        123456
+                      </span>{' '}
+                      (dapat diubah oleh Admin Dispatcher pada Data Master Admin View).
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-sky-800 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sky-900 disabled:opacity-50 shadow-xs"
+                >
+                  <Eye className="h-4 w-4 shrink-0" />
+                  {submitting
+                    ? 'Memverifikasi PIN...'
+                    : 'Masuk Portal Admin View'}
                 </button>
               </form>
             )}

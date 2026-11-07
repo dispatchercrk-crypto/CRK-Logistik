@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
+  AdminViewMaster,
   AppStateResponse,
   Assignment,
   DriverExpense,
@@ -145,6 +146,7 @@ interface WorkspaceBackupPayload {
   fleetCards: FleetCardMaster[];
   driverExpenses: DriverExpense[];
   assignments: Assignment[];
+  adminViews?: AdminViewMaster[];
 }
 
 function saveWorkspaceBackupLocally(state: AppStateResponse): void {
@@ -209,6 +211,7 @@ function saveWorkspaceBackupLocally(state: AppStateResponse): void {
       fleetCards: state.fleetCards || [],
       driverExpenses: lightExpenses,
       assignments: lightAssignments,
+      adminViews: state.adminViews || [],
     };
     window.localStorage.setItem(
       WORKSPACE_BACKUP_STORAGE_KEY,
@@ -326,6 +329,7 @@ const INITIAL_STATE: AppStateResponse = {
   driverExpenses: [],
   assignments: [],
   notifications: [],
+  adminViews: [],
   config: {
     spreadsheetId: '',
     spreadsheetTitle: '',
@@ -376,6 +380,7 @@ export default function App() {
       fleetCards: localBackup?.fleetCards || [],
       driverExpenses: localBackup?.driverExpenses || [],
       assignments: localBackup?.assignments || [],
+      adminViews: localBackup?.adminViews || [],
       config: baseConfig,
     };
   });
@@ -412,6 +417,7 @@ export default function App() {
   const [sessionRole, setSessionRole] = useState<UserRole | null>(() => {
     if (!initialSavedSession) return null;
     if (initialSavedSession.role === UserRole.ADMIN) return UserRole.ADMIN;
+    if (initialSavedSession.role === UserRole.ADMIN_VIEW) return UserRole.ADMIN_VIEW;
     if (
       initialSavedSession.role === UserRole.DRIVER &&
       initialSavedSession.driverSnapshot
@@ -424,6 +430,12 @@ export default function App() {
     () =>
       initialSavedSession?.role === UserRole.DRIVER
         ? initialSavedSession.driverSnapshot || null
+        : null
+  );
+  const [loggedInAdminView, setLoggedInAdminView] = useState<AdminViewMaster | null>(
+    () =>
+      initialSavedSession?.role === UserRole.ADMIN_VIEW
+        ? initialSavedSession.adminViewSnapshot || null
         : null
   );
 
@@ -527,7 +539,9 @@ export default function App() {
       }
     ) => {
       const prevMap = prevStatusMapRef.current;
-      const isAdminActive = sessionRoleRef.current === UserRole.ADMIN;
+      const isAdminActive =
+        sessionRoleRef.current === UserRole.ADMIN ||
+        sessionRoleRef.current === UserRole.ADMIN_VIEW;
       const activeDriver =
         sessionRoleRef.current === UserRole.DRIVER
           ? loggedInDriverRef.current
@@ -720,6 +734,9 @@ export default function App() {
           ? nextState.fleetCards
           : [],
         driverExpenses: normalizedExpenses,
+        adminViews: Array.isArray(nextState.adminViews)
+          ? nextState.adminViews
+          : appStateRef.current.adminViews || [],
       };
       const incomingSheetId = String(
         nextState.config?.spreadsheetId || ''
@@ -4000,6 +4017,108 @@ export default function App() {
     }
   };
 
+  const handleSaveAdminView = async (
+    mode: 'create' | 'edit',
+    originalId: string,
+    adminView: AdminViewMaster
+  ): Promise<boolean> => {
+    try {
+      const url =
+        mode === 'create'
+          ? '/api/master/admin-views'
+          : `/api/master/admin-views/${encodeURIComponent(originalId)}`;
+      const res = await safeApiFetch<{
+        error?: string;
+        state: AppStateResponse;
+      }>(url, {
+        method: mode === 'create' ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adminView),
+      });
+      if (!res.ok || !res.data?.state) {
+        addToast(
+          'error',
+          'Gagal Menyimpan Admin View',
+          res.errorMessage || 'Gagal menyimpan Master Admin View.'
+        );
+        return false;
+      }
+      applyIncomingState(res.data.state);
+      addToast(
+        'success',
+        mode === 'create' ? 'Admin View Ditambahkan' : 'Admin View Diperbarui',
+        `${adminView.id} — ${adminView.name} tersimpan di Master Admin View.`
+      );
+      return true;
+    } catch {
+      addToast('error', 'Kesalahan Jaringan', 'Gagal menyimpan Master Admin View.');
+      return false;
+    }
+  };
+
+  const handleChangeAdminViewPin = async (
+    id: string,
+    newPin: string
+  ): Promise<boolean> => {
+    try {
+      const res = await safeApiFetch<{
+        error?: string;
+        state: AppStateResponse;
+      }>(`/api/master/admin-views/${encodeURIComponent(id)}/pin`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: newPin }),
+      });
+      if (!res.ok || !res.data?.state) {
+        addToast(
+          'error',
+          'Gagal Mengubah PIN',
+          res.errorMessage || 'Gagal mengubah PIN Admin View.'
+        );
+        return false;
+      }
+      applyIncomingState(res.data.state);
+      addToast(
+        'success',
+        'PIN Admin View Berhasil Diubah',
+        `PIN untuk ${id} berhasil diperbarui oleh Dispatcher.`
+      );
+      return true;
+    } catch {
+      addToast('error', 'Kesalahan Jaringan', 'Gagal memperbarui PIN Admin View.');
+      return false;
+    }
+  };
+
+  const handleDeleteAdminView = async (id: string): Promise<boolean> => {
+    try {
+      const res = await safeApiFetch<{
+        error?: string;
+        state: AppStateResponse;
+      }>(`/api/master/admin-views/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok || !res.data?.state) {
+        addToast(
+          'error',
+          'Gagal Menghapus Admin View',
+          res.errorMessage || 'Gagal menghapus Admin View.'
+        );
+        return false;
+      }
+      applyIncomingState(res.data.state);
+      addToast(
+        'success',
+        'Admin View Dihapus',
+        `Akun Admin View ${id} telah dihapus dari Master Data.`
+      );
+      return true;
+    } catch {
+      addToast('error', 'Kesalahan Jaringan', 'Gagal menghapus Master Admin View.');
+      return false;
+    }
+  };
+
   const handleSubmitDriverExpense = async (
     payload: DriverExpenseSubmitPayload
   ): Promise<boolean> => {
@@ -6211,6 +6330,7 @@ export default function App() {
           vehicles={appState.vehicles}
           assignments={appState.assignments}
           config={appState.config}
+          adminViews={appState.adminViews || []}
           googleUser={googleUser}
           hasGoogleToken={hasGoogleToken}
           isSyncing={isSyncing}
@@ -6247,7 +6367,25 @@ export default function App() {
             addToast(
               'success',
               'CRK LOGISTIK DELIVERY SISTEM',
-              'Sesi Admin aktif permanen (10 tahun bergulir) & tidak akan keluar otomatis hingga Anda menekan Keluar.'
+              'Sesi Admin Dispatcher aktif permanen (10 tahun bergulir) & tidak akan keluar otomatis hingga Anda menekan Keluar.'
+            );
+          }}
+          onAdminViewLoginSuccess={(adminView) => {
+            for (const a of appStateRef.current.assignments) {
+              prevStatusMapRef.current.set(a.id, a.status);
+            }
+            statusMapInitializedRef.current = true;
+            setLoggedInAdminView(adminView);
+            setSessionRole(UserRole.ADMIN_VIEW);
+            persistPortalSession({
+              role: UserRole.ADMIN_VIEW,
+              adminViewId: adminView.id,
+              adminViewSnapshot: adminView,
+            });
+            addToast(
+              'success',
+              `Portal Admin View: ${adminView.name}`,
+              'Mode Monitoring aktif (Hanya Lihat). Dasbor operasional siap dipantau.'
             );
           }}
         />
@@ -6290,7 +6428,7 @@ export default function App() {
         />
       )}
 
-      {sessionRole === UserRole.ADMIN && (
+      {(sessionRole === UserRole.ADMIN || sessionRole === UserRole.ADMIN_VIEW) && (
         <AdminPortal
           drivers={appState.drivers}
           vehicles={appState.vehicles}
@@ -6304,6 +6442,12 @@ export default function App() {
           hasGoogleToken={hasGoogleToken}
           isSyncing={isSyncing}
           isDriveSyncing={isDriveSyncing}
+          isReadOnlyView={sessionRole === UserRole.ADMIN_VIEW}
+          currentAdminViewUser={loggedInAdminView}
+          adminViews={appState.adminViews || []}
+          onSaveAdminView={handleSaveAdminView}
+          onChangeAdminViewPin={handleChangeAdminViewPin}
+          onDeleteAdminView={handleDeleteAdminView}
           onGoogleLogin={handleGoogleLogin}
           onGoogleLogout={handleGoogleLogout}
           onManualSync={handleManualAdminSync}
@@ -6342,6 +6486,7 @@ export default function App() {
           onLogout={() => {
             persistPortalSession(null);
             setSessionRole(null);
+            setLoggedInAdminView(null);
           }}
         />
       )}
