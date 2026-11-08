@@ -25,9 +25,18 @@ interface AssignmentStatusTimelineViewProps {
 export const AssignmentStatusTimelineView: React.FC<
   AssignmentStatusTimelineViewProps
 > = ({ assignment, notifications, compact = false }) => {
+  const [nowMs, setNowMs] = React.useState<number>(() => Date.now());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const timeline = useMemo(
-    () => resolveAssignmentStatusTimeline(assignment, notifications),
-    [assignment, notifications]
+    () => resolveAssignmentStatusTimeline(assignment, notifications, nowMs),
+    [assignment, notifications, nowMs]
   );
 
   return (
@@ -178,11 +187,12 @@ interface FleetStatusHistoryModalProps {
   groupName?: string;
   onCopyText: (text: string, label: string) => void;
   onClose: () => void;
+  isReadOnlyView?: boolean;
 }
 
 export const FleetStatusHistoryModal: React.FC<
   FleetStatusHistoryModalProps
-> = ({ assignment, notifications, groupName, onCopyText, onClose }) => {
+> = ({ assignment, notifications, groupName, onCopyText, onClose, isReadOnlyView = false }) => {
   if (!assignment) return null;
 
   const waMessage = buildFleetStatusHistoryWaMessage(
@@ -239,16 +249,18 @@ export const FleetStatusHistoryModal: React.FC<
 
         <div className="mt-6 flex flex-col gap-2.5 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <button
-              type="button"
-              onClick={() =>
-                launchWhatsAppUrl(buildWhatsAppGroupUrl(waMessage))
-              }
-              className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 sm:min-h-0 sm:rounded-lg"
-            >
-              <Users className="h-3.5 w-3.5 shrink-0" />
-              Kirim ke Grup WA
-            </button>
+            {!isReadOnlyView && (
+              <button
+                type="button"
+                onClick={() =>
+                  launchWhatsAppUrl(buildWhatsAppGroupUrl(waMessage))
+                }
+                className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 sm:min-h-0 sm:rounded-lg"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                Kirim ke Grup WA
+              </button>
+            )}
             <button
               type="button"
               onClick={() =>

@@ -189,11 +189,12 @@ export function buildDriverRealtimeWaMessage(
       asg.driveMedia?.fotoSuhuSerahTerimaUrl
   );
 
+  const nowMs = nowDate.getTime();
   const depMs = parseFlexibleTimestamp(dep?.timestamp);
   const delivMs = parseFlexibleTimestamp(deliv?.timestamp || asg.deliveredAt);
   const hoMs = parseFlexibleTimestamp(ho?.timestamp);
 
-  // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered saja
+  // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered / Real-time saat ini
   const departToDeliveredMinutes =
     depMs !== null && delivMs !== null && delivMs >= depMs
       ? Math.max(0, Math.round((delivMs - depMs) / 60000))
@@ -203,7 +204,16 @@ export function buildDriverRealtimeWaMessage(
       ? formatDurationMinutes(departToDeliveredMinutes)
       : null;
 
-  // Durasi Bongkar / Handover: hitung dari Waktu Delivered sampai Selesai Handover
+  const liveInTransitMinutes =
+    asg.status === TaskStatus.DALAM_PERJALANAN && depMs !== null && nowMs >= depMs
+      ? Math.max(0, Math.round((nowMs - depMs) / 60000))
+      : null;
+  const liveInTransitText =
+    liveInTransitMinutes !== null
+      ? formatDurationMinutes(liveInTransitMinutes)
+      : null;
+
+  // Durasi Bongkar / Handover: hitung dari Waktu Delivered sampai Selesai Handover / Real-time saat ini
   const deliveredToHandoverMinutes =
     delivMs !== null && hoMs !== null && hoMs >= delivMs
       ? Math.max(0, Math.round((hoMs - delivMs) / 60000))
@@ -211,6 +221,15 @@ export function buildDriverRealtimeWaMessage(
   const deliveredToHandoverText =
     deliveredToHandoverMinutes !== null
       ? formatDurationMinutes(deliveredToHandoverMinutes)
+      : null;
+
+  const liveHandoverMinutes =
+    asg.status === TaskStatus.DELIVERED && delivMs !== null && nowMs >= delivMs
+      ? Math.max(0, Math.round((nowMs - delivMs) / 60000))
+      : null;
+  const liveHandoverText =
+    liveHandoverMinutes !== null
+      ? formatDurationMinutes(liveHandoverMinutes)
       : null;
 
   const deliveredLines = hasDeliveredInfo
@@ -221,6 +240,11 @@ export function buildDriverRealtimeWaMessage(
         )}`,
         departToDeliveredText
           ? `Durasi Perjalanan (Berangkat → Delivered) : ${departToDeliveredText}`
+          : liveInTransitText
+          ? `Durasi Perjalanan Berjalan : ${liveInTransitText}`
+          : '',
+        liveHandoverText
+          ? `Durasi Bongkar Berjalan (Delivered → Saat ini) : ${liveHandoverText}`
           : '',
         resolvedKmSampai !== null && resolvedKmSampai >= 0
           ? `Odometer KM Sampai : ${resolvedKmSampai.toLocaleString('id-ID')} km${
@@ -556,6 +580,8 @@ export interface AssignmentStatusTimeline {
   liveInTransitText: string | null;
   deliveredToHandoverMinutes: number | null;
   deliveredToHandoverText: string | null;
+  liveHandoverMinutes: number | null;
+  liveHandoverText: string | null;
   totalTripMinutes: number | null;
   totalTripText: string | null;
   inlineTransitionSummary: string;
@@ -634,6 +660,17 @@ export function resolveAssignmentStatusTimeline(
   const deliveredToHandoverText =
     deliveredToHandoverMinutes !== null && !isDeliveredInferredFromHandover
       ? formatDurationMinutes(deliveredToHandoverMinutes)
+      : null;
+
+  const liveHandoverMinutes =
+    asg.status === TaskStatus.DELIVERED &&
+    delivMs !== null &&
+    nowMs >= delivMs
+      ? Math.max(0, Math.round((nowMs - delivMs) / 60000))
+      : null;
+  const liveHandoverText =
+    liveHandoverMinutes !== null
+      ? formatDurationMinutes(liveHandoverMinutes)
       : null;
 
   // Perhitungan Durasi Perjalanan: hitung dari Durasi Keberangkatan sampai Delivered saja
@@ -847,6 +884,8 @@ export function resolveAssignmentStatusTimeline(
     liveInTransitText,
     deliveredToHandoverMinutes,
     deliveredToHandoverText,
+    liveHandoverMinutes,
+    liveHandoverText,
     totalTripMinutes,
     totalTripText,
     inlineTransitionSummary,

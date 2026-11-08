@@ -476,6 +476,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
   }, [activeMenu]);
 
+  useEffect(() => {
+    if (isReadOnlyView) {
+      if (
+        activeMenu === 'master_data' ||
+        activeMenu === 'spreadsheets' ||
+        activeMenu === 'ubah_pin' ||
+        activeMenu === 'notifikasi_wa'
+      ) {
+        setActiveMenu('surat_tugas');
+      }
+    }
+  }, [isReadOnlyView, activeMenu]);
+
   const fleetDriveStats = useMemo(
     () => summarizeFleetPhotoDriveStats(assignments),
     [assignments]
@@ -1510,7 +1523,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <span className="truncate">CRK LOGISTIK</span>
             </div>
             <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-              {isReadOnlyView ? 'Portal Admin View (Read-Only)' : 'Cold Chain Delivery Sistem'}
+              {isReadOnlyView ? 'Portal Admin View' : 'Cold Chain Delivery Sistem'}
             </p>
           </div>
 
@@ -1551,23 +1564,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMenu('master_data')}
-              className={`flex w-full items-center justify-between rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                activeMenu === 'master_data'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Database className="h-4 w-4 shrink-0" />
-                Master Data
-              </span>
-              <span className="font-mono text-xs tabular-nums">
-                {drivers.length + vehicles.length + routes.length}
-              </span>
-            </button>
+            {!isReadOnlyView && (
+              <button
+                type="button"
+                onClick={() => setActiveMenu('master_data')}
+                className={`flex w-full items-center justify-between rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeMenu === 'master_data'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Database className="h-4 w-4 shrink-0" />
+                  Master Data
+                </span>
+                <span className="font-mono text-xs tabular-nums">
+                  {drivers.length + vehicles.length + routes.length}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1605,64 +1620,72 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveMenu('notifikasi_wa')}
-              className={`flex w-full items-center justify-between rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                activeMenu === 'notifikasi_wa'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <MessageSquare className="h-4 w-4 shrink-0" />
-                WhatsApp 1-Klik
-              </span>
-              <span className="font-mono text-xs tabular-nums">
-                {notifications.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveMenu('spreadsheets')}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                activeMenu === 'spreadsheets'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <FileSpreadsheet className="h-4 w-4 shrink-0" />
-              Database Spreadsheets
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveMenu('ubah_pin')}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
-                activeMenu === 'ubah_pin'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <ShieldCheck className="h-4 w-4 shrink-0" />
-              Sesi Aktif &amp; PIN Admin
-            </button>
-
-            <div className="pt-2 space-y-2">
+            {!isReadOnlyView && (
               <button
                 type="button"
-                onClick={() => setDriverLinkModalOpen(true)}
-                className="flex w-full items-center justify-between rounded-lg border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-xs font-semibold text-sky-900 transition-colors hover:bg-sky-100 whitespace-nowrap"
+                onClick={() => setActiveMenu('notifikasi_wa')}
+                className={`flex w-full items-center justify-between rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeMenu === 'notifikasi_wa'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
               >
-                <span className="flex items-center gap-2">
-                  <Link2 className="h-4 w-4 shrink-0 text-sky-700" />
-                  Link Khusus Driver
+                <span className="flex items-center gap-2.5">
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  WhatsApp 1-Klik
                 </span>
-                <span className="font-mono tabular-nums text-sky-700">
-                  {drivers.filter((d) => d.active !== false).length}
+                <span className="font-mono text-xs tabular-nums">
+                  {notifications.length}
                 </span>
               </button>
+            )}
+
+            {!isReadOnlyView && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveMenu('spreadsheets')}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeMenu === 'spreadsheets'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <FileSpreadsheet className="h-4 w-4 shrink-0" />
+                  Database Spreadsheets
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveMenu('ubah_pin')}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                    activeMenu === 'ubah_pin'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4 shrink-0" />
+                  Sesi Aktif &amp; PIN Admin
+                </button>
+              </>
+            )}
+
+            <div className="pt-2 space-y-2">
+              {!isReadOnlyView && (
+                <button
+                  type="button"
+                  onClick={() => setDriverLinkModalOpen(true)}
+                  className="flex w-full items-center justify-between rounded-lg border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-xs font-semibold text-sky-900 transition-colors hover:bg-sky-100 whitespace-nowrap"
+                >
+                  <span className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4 shrink-0 text-sky-700" />
+                    Link Khusus Driver
+                  </span>
+                  <span className="font-mono tabular-nums text-sky-700">
+                    {drivers.filter((d) => d.active !== false).length}
+                  </span>
+                </button>
+              )}
               <PWAInstallButton fullWidth label="Instal Aplikasi di Perangkat" />
             </div>
           </nav>
@@ -1726,7 +1749,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     <span className="truncate">CRK LOGISTIK</span>
                   </div>
                   <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                    {isReadOnlyView ? 'Portal Admin View (Read-Only)' : 'Portal Admin Dispatcher'}
+                    {isReadOnlyView ? 'Portal Admin View' : 'Portal Admin Dispatcher'}
                   </p>
                 </div>
                 <button
@@ -1762,7 +1785,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     ['spreadsheets', 'Database Spreadsheets', null],
                     ['ubah_pin', 'Sesi Aktif & PIN Admin', null],
                   ] as Array<[AdminMenuTab, string, number | null]>
-                ).map(([key, label, count]) => (
+                )
+                  .filter(([key]) => {
+                    if (isReadOnlyView) {
+                      return (
+                        key !== 'master_data' &&
+                        key !== 'spreadsheets' &&
+                        key !== 'ubah_pin' &&
+                        key !== 'notifikasi_wa'
+                      );
+                    }
+                    return true;
+                  })
+                  .map(([key, label, count]) => (
                   <button
                     key={key}
                     type="button"
@@ -1790,29 +1825,33 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 ))}
 
                 <div className="pt-2 space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveMenu('surat_tugas');
-                      setShowDailySummaryInDashboard(true);
-                      setMobileMenuOpen(false);
-                    }}
-                    className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-left text-xs font-semibold text-emerald-900"
-                  >
-                    <MessageSquare className="h-4 w-4 shrink-0 text-emerald-700" />
-                    Ringkasan Harian WA
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setDriverLinkModalOpen(true);
-                    }}
-                    className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-left text-xs font-semibold text-sky-900"
-                  >
-                    <Link2 className="h-4 w-4 shrink-0 text-sky-700" />
-                    Bagikan Link Khusus Driver
-                  </button>
+                  {!isReadOnlyView && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveMenu('surat_tugas');
+                          setShowDailySummaryInDashboard(true);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-left text-xs font-semibold text-emerald-900"
+                      >
+                        <MessageSquare className="h-4 w-4 shrink-0 text-emerald-700" />
+                        Ringkasan Harian WA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          setDriverLinkModalOpen(true);
+                        }}
+                        className="flex min-h-[44px] w-full items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/80 px-3.5 py-2.5 text-left text-xs font-semibold text-sky-900"
+                      >
+                        <Link2 className="h-4 w-4 shrink-0 text-sky-700" />
+                        Bagikan Link Khusus Driver
+                      </button>
+                    </>
+                  )}
                   <div className="pt-0.5">
                     <PWAInstallButton fullWidth label="Instal Aplikasi di Perangkat" />
                   </div>
@@ -1820,7 +1859,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </nav>
               <div className="mt-4 border-t border-slate-200 pt-3 text-[11px] text-slate-500">
                 <p className="font-semibold text-emerald-700">
-                  Sesi Admin Dispatcher: Aktif Permanen
+                  {isReadOnlyView ? `Sesi Admin View: ${currentAdminViewUser?.name || 'Viewer'}` : 'Sesi Admin Dispatcher: Aktif Permanen'}
                 </p>
                 <p className="mt-0.5 truncate">
                   {googleUser
@@ -1842,26 +1881,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
         {/* Main Workspace Area */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {isReadOnlyView && (
-            <div className="border-b border-indigo-200 bg-gradient-to-r from-indigo-50 via-sky-50 to-indigo-50 px-3.5 py-2 sm:px-8 text-xs font-semibold text-indigo-950 flex flex-wrap items-center justify-between gap-2 shadow-xs">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white shrink-0">
-                  <Eye className="h-3 w-3" />
-                </span>
-                <span>
-                  <strong>Portal Admin View · Mode Monitoring (Read-Only)</strong> — Login sebagai:{' '}
-                  <span className="font-bold text-indigo-900">
-                    {currentAdminViewUser?.name || 'Viewer Operasional'} ({currentAdminViewUser?.id || 'AV-001'})
-                  </span>
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-md bg-indigo-100 border border-indigo-200 px-2 py-0.5 text-[11px] font-medium text-indigo-800">
-                  Hanya Lihat · Edit Dinonaktifkan
-                </span>
-              </div>
-            </div>
-          )}
 
           {/* Sleek Glassmorphic Top Bar (Single 54px Row on Mobile + Notification Bell) */}
           <header className="sticky top-0 z-30 border-b border-slate-200/90 bg-white/92 backdrop-blur-md">
@@ -1953,15 +1972,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                 <PWAInstallButton compact />
 
-                <button
-                  type="button"
-                  onClick={() => setDriverLinkModalOpen(true)}
-                  className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900 transition-colors hover:bg-sky-100 whitespace-nowrap shrink-0"
-                  title="Bagikan Link Login Khusus Driver via Salin Link atau WhatsApp"
-                >
-                  <Link2 className="h-3.5 w-3.5 text-sky-700" />
-                  <span>Link Driver</span>
-                </button>
+                {!isReadOnlyView && (
+                  <button
+                    type="button"
+                    onClick={() => setDriverLinkModalOpen(true)}
+                    className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-900 transition-colors hover:bg-sky-100 whitespace-nowrap shrink-0"
+                    title="Bagikan Link Login Khusus Driver via Salin Link atau WhatsApp"
+                  >
+                    <Link2 className="h-3.5 w-3.5 text-sky-700" />
+                    <span>Link Driver</span>
+                  </button>
+                )}
 
                 {/* Real-Time Interactive Notification Bell (Admin Portal) */}
                 <NotificationBell
@@ -1971,8 +1992,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   spreadsheetTitle={config.spreadsheetTitle}
                   lastSyncedAt={config.lastSyncedAt}
                   onSelectNotification={handleAdminBellSelect}
-                  onQuickWhatsApp={handleAdminBellQuickWa}
-                  onViewAllLogs={() => setActiveMenu('notifikasi_wa')}
+                  onQuickWhatsApp={isReadOnlyView ? undefined : handleAdminBellQuickWa}
+                  onViewAllLogs={isReadOnlyView ? undefined : () => setActiveMenu('notifikasi_wa')}
                 />
 
                 <button
@@ -1998,24 +2019,26 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                 {activeMenu === 'surat_tugas' && (
                   <>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowDailySummaryInDashboard((prev) => !prev)
-                      }
-                      className={`hidden sm:inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                        showDailySummaryInDashboard
-                          ? 'border-emerald-700 bg-emerald-700 text-white'
-                          : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
-                      }`}
-                      title="Buka atau tutup panel Ringkasan Harian Performa Operasional Armada untuk dikirim ke WhatsApp"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      <span className="hidden xl:inline">
-                        Ringkasan Harian WA
-                      </span>
-                      <span className="xl:hidden">Rekap WA</span>
-                    </button>
+                    {!isReadOnlyView && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowDailySummaryInDashboard((prev) => !prev)
+                        }
+                        className={`hidden sm:inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                          showDailySummaryInDashboard
+                            ? 'border-emerald-700 bg-emerald-700 text-white'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
+                        }`}
+                        title="Buka atau tutup panel Ringkasan Harian Performa Operasional Armada untuk dikirim ke WhatsApp"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        <span className="hidden xl:inline">
+                          Ringkasan Harian WA
+                        </span>
+                        <span className="xl:hidden">Rekap WA</span>
+                      </button>
+                    )}
                     {!isReadOnlyView && (
                       <button
                         type="button"
@@ -2207,7 +2230,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 )}
 
                 {/* Daily Operational Summary WhatsApp Generator (Collapsible in Dashboard) */}
-                {showDailySummaryInDashboard && (
+                {!isReadOnlyView && showDailySummaryInDashboard && (
                   <DailyOperationalSummaryPanel
                     assignments={assignments}
                     vehicles={vehicles}
@@ -2220,30 +2243,32 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 )}
 
                 {/* Mobile Quick Operational Shortcuts (Non-Sticky, Ergonomic 2-Col) */}
-                <div className="grid grid-cols-2 gap-2.5 sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowDailySummaryInDashboard((prev) => !prev)
-                    }
-                    className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
-                      showDailySummaryInDashboard
-                        ? 'border-emerald-700 bg-emerald-700 text-white'
-                        : 'border-emerald-200 bg-emerald-50/90 text-emerald-900'
-                    }`}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                    Rekap Harian WA
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDriverLinkModalOpen(true)}
-                    className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-2 text-xs font-semibold text-sky-900 transition-colors"
-                  >
-                    <Link2 className="h-3.5 w-3.5 shrink-0 text-sky-700" />
-                    Link Khusus Driver
-                  </button>
-                </div>
+                {!isReadOnlyView && (
+                  <div className="grid grid-cols-2 gap-2.5 sm:hidden">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowDailySummaryInDashboard((prev) => !prev)
+                      }
+                      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
+                        showDailySummaryInDashboard
+                          ? 'border-emerald-700 bg-emerald-700 text-white'
+                          : 'border-emerald-200 bg-emerald-50/90 text-emerald-900'
+                      }`}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                      Rekap Harian WA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDriverLinkModalOpen(true)}
+                      className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-2 text-xs font-semibold text-sky-900 transition-colors"
+                    >
+                      <Link2 className="h-3.5 w-3.5 shrink-0 text-sky-700" />
+                      Link Khusus Driver
+                    </button>
+                  </div>
+                )}
 
                 {/* Flat KPI Strip (6 Metrics Including Utilitas Muatan) */}
                 <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl sm:rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3 lg:grid-cols-6">
@@ -2324,45 +2349,47 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                         (Menunggu Berangkat, Dalam Perjalanan, atau Delivered).
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveMenu('master_data');
-                          setMasterTab('vehicles');
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                      >
-                        Atur Kapasitas CBM Unit
-                      </button>
-                      {onPurgeAssignmentsCache && assignments.length > 0 && (
+                    {!isReadOnlyView && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() =>
-                            triggerConfirm({
-                              open: true,
-                              title: 'Bersihkan Cache & Data Surat Tugas?',
-                              description:
-                                'Seluruh Surat Tugas dan cache tugas akan dikosongkan agar Anda dapat memulai dari 0 data bersih. Master Driver, Master Armada, Master Rute, dan sesi login tetap aman tersimpan.',
-                              details: [
-                                `Total Surat Tugas Dihapus : ${assignments.length} data`,
-                                `Status Unit Armada        : Dikembalikan ke Siap Jalan`,
-                                `Master Data & PIN Admin   : Tetap Utuh (Tidak Dihapus)`,
-                              ],
-                              confirmLabel: 'Bersihkan Surat Tugas',
-                              variant: 'danger',
-                              action: async () => {
-                                await onPurgeAssignmentsCache();
-                              },
-                            })
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 whitespace-nowrap"
+                          onClick={() => {
+                            setActiveMenu('master_data');
+                            setMasterTab('vehicles');
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Bersihkan Cache Surat Tugas
+                          Atur Kapasitas CBM Unit
                         </button>
-                      )}
-                    </div>
+                        {onPurgeAssignmentsCache && assignments.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              triggerConfirm({
+                                open: true,
+                                title: 'Bersihkan Cache & Data Surat Tugas?',
+                                description:
+                                  'Seluruh Surat Tugas dan cache tugas akan dikosongkan agar Anda dapat memulai dari 0 data bersih. Master Driver, Master Armada, Master Rute, dan sesi login tetap aman tersimpan.',
+                                details: [
+                                  `Total Surat Tugas Dihapus : ${assignments.length} data`,
+                                  `Status Unit Armada        : Dikembalikan ke Siap Jalan`,
+                                  `Master Data & PIN Admin   : Tetap Utuh (Tidak Dihapus)`,
+                                ],
+                                confirmLabel: 'Bersihkan Surat Tugas',
+                                variant: 'danger',
+                                action: async () => {
+                                  await onPurgeAssignmentsCache();
+                                },
+                              })
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 whitespace-nowrap"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Bersihkan Cache Surat Tugas
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* CBM KPI Summary Strip */}
@@ -2886,18 +2913,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                   </>
                                 )}
                                 {folderHref ? (
-                                  <>
-                                    <span aria-hidden="true">·</span>
-                                    <a
-                                      href={folderHref}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="font-semibold text-sky-700 underline"
-                                    >
-                                      Drive ({photoStats.syncedToDrive}/
-                                      {photoStats.totalUploaded})
-                                    </a>
-                                  </>
+                                  !isReadOnlyView ? (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <a
+                                        href={folderHref}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="font-semibold text-sky-700 underline"
+                                      >
+                                        Drive ({photoStats.syncedToDrive}/
+                                        {photoStats.totalUploaded})
+                                      </a>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <span className="font-semibold text-slate-700">
+                                        Drive ({photoStats.syncedToDrive}/
+                                        {photoStats.totalUploaded})
+                                      </span>
+                                    </>
+                                  )
                                 ) : photoStats.totalUploaded > 0 ? (
                                   <>
                                     <span aria-hidden="true">·</span>
@@ -2910,26 +2947,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
                               {/* Touch-Friendly Action Strip */}
                               <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleOpenAssignmentWa(asg, 'GROUP')
-                                  }
-                                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.98]"
-                                >
-                                  <Users className="h-3.5 w-3.5" />
-                                  WA Grup
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleOpenAssignmentWa(asg, 'DRIVER')
-                                  }
-                                  className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 active:scale-[0.98]"
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                  WA Driver
-                                </button>
+                                {!isReadOnlyView && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleOpenAssignmentWa(asg, 'GROUP')
+                                      }
+                                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white active:scale-[0.98]"
+                                    >
+                                      <Users className="h-3.5 w-3.5" />
+                                      WA Grup
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleOpenAssignmentWa(asg, 'DRIVER')
+                                      }
+                                      className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 active:scale-[0.98]"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                      WA Driver
+                                    </button>
+                                  </>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -5974,142 +6015,158 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   </div>
                 </section>
 
-              <div className="max-w-lg rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
-                <h2 className="text-lg font-bold text-slate-900">
-                  Ubah PIN Admin Dispatcher
-                </h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Setelah PIN Default dirubah, PIN baru tersimpan secara{' '}
-                  <strong className="font-semibold text-slate-900">
-                    permanen
-                  </strong>{' '}
-                  di sistem, penyimpanan browser, Cloud, serta Google
-                  Spreadsheets dan tidak akan kembali ke PIN Default.
-                </p>
+              {!isReadOnlyView ? (
+                <div className="max-w-lg rounded-xl border border-slate-200 bg-white p-6 sm:p-8">
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Ubah PIN Admin Dispatcher
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Setelah PIN Default dirubah, PIN baru tersimpan secara{' '}
+                    <strong className="font-semibold text-slate-900">
+                      permanen
+                    </strong>{' '}
+                    di sistem, penyimpanan browser, Cloud, serta Google
+                    Spreadsheets dan tidak akan kembali ke PIN Default.
+                  </p>
 
-                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700">
-                  Status PIN Saat Ini:{' '}
-                  <strong
-                    className={
-                      config.isDefaultPin
-                        ? 'text-amber-700'
-                        : 'text-emerald-700'
-                    }
-                  >
-                    {config.isDefaultPin
-                      ? 'Menggunakan PIN Default (123456)'
-                      : 'PIN Kustom Permanen Aktif'}
-                  </strong>
-                </div>
-
-                {pinError && (
-                  <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
-                    {pinError}
-                  </div>
-                )}
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setPinError('');
-                    if (!currentPin.trim() || !newPin.trim()) {
-                      setPinError('PIN lama dan PIN baru wajib diisi.');
-                      return;
-                    }
-                    if (newPin.trim().length < 4) {
-                      setPinError(
-                        'PIN baru minimal terdiri dari 4 karakter/angka.'
-                      );
-                      return;
-                    }
-                    if (newPin.trim() !== confirmNewPin.trim()) {
-                      setPinError('Konfirmasi PIN baru tidak cocok.');
-                      return;
-                    }
-
-                    triggerConfirm({
-                      open: true,
-                      title: 'Simpan Perubahan PIN Admin Permanen?',
-                      description:
-                        'PIN akses Admin Dispatcher Anda akan diperbarui secara permanen dan tidak akan kembali ke PIN Default.',
-                      details: [
-                        'PIN baru tersimpan permanen di server, perangkat, Cloud & Google Spreadsheets.',
-                      ],
-                      confirmLabel: 'Ubah PIN Permanen',
-                      variant: 'primary',
-                      action: async () => {
-                        const ok = await onChangeAdminPin(
-                          currentPin.trim(),
-                          newPin.trim()
-                        );
-                        if (ok) {
-                          setCurrentPin('');
-                          setNewPin('');
-                          setConfirmNewPin('');
-                        }
-                      },
-                    });
-                  }}
-                  className="mt-6 space-y-4"
-                >
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      PIN Admin Saat Ini *
-                    </label>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      required
-                      value={currentPin}
-                      onChange={(e) => setCurrentPin(e.target.value)}
-                      placeholder="Masukkan PIN saat ini"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      PIN Baru (Minimal 4 Angka/Karakter) *
-                    </label>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      required
-                      value={newPin}
-                      onChange={(e) => setNewPin(e.target.value)}
-                      placeholder="Masukkan PIN baru"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700">
-                      Ulangi PIN Baru *
-                    </label>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      required
-                      value={confirmNewPin}
-                      onChange={(e) => setConfirmNewPin(e.target.value)}
-                      placeholder="Konfirmasi PIN baru"
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      className="rounded-lg bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-700">
+                    Status PIN Saat Ini:{' '}
+                    <strong
+                      className={
+                        config.isDefaultPin
+                          ? 'text-amber-700'
+                          : 'text-emerald-700'
+                      }
                     >
-                      Perbarui PIN Admin
-                    </button>
+                      {config.isDefaultPin
+                        ? 'Menggunakan PIN Default (123456)'
+                        : 'PIN Kustom Permanen Aktif'}
+                    </strong>
                   </div>
-                </form>
-              </div>
+
+                  {pinError && (
+                    <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
+                      {pinError}
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setPinError('');
+                      if (!currentPin.trim() || !newPin.trim()) {
+                        setPinError('PIN lama dan PIN baru wajib diisi.');
+                        return;
+                      }
+                      if (newPin.trim().length < 4) {
+                        setPinError(
+                          'PIN baru minimal terdiri dari 4 karakter/angka.'
+                        );
+                        return;
+                      }
+                      if (newPin.trim() !== confirmNewPin.trim()) {
+                        setPinError('Konfirmasi PIN baru tidak cocok.');
+                        return;
+                      }
+
+                      triggerConfirm({
+                        open: true,
+                        title: 'Simpan Perubahan PIN Admin Permanen?',
+                        description:
+                          'PIN akses Admin Dispatcher Anda akan diperbarui secara permanen dan tidak akan kembali ke PIN Default.',
+                        details: [
+                          'PIN baru tersimpan permanen di server, perangkat, Cloud & Google Spreadsheets.',
+                        ],
+                        confirmLabel: 'Ubah PIN Permanen',
+                        variant: 'primary',
+                        action: async () => {
+                          const ok = await onChangeAdminPin(
+                            currentPin.trim(),
+                            newPin.trim()
+                          );
+                          if (ok) {
+                            setCurrentPin('');
+                            setNewPin('');
+                            setConfirmNewPin('');
+                          }
+                        },
+                      });
+                    }}
+                    className="mt-6 space-y-4"
+                  >
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        PIN Admin Saat Ini *
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        required
+                        value={currentPin}
+                        onChange={(e) => setCurrentPin(e.target.value)}
+                        placeholder="Masukkan PIN saat ini"
+                        className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        PIN Baru (Minimal 4 Angka/Karakter) *
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        required
+                        value={newPin}
+                        onChange={(e) => setNewPin(e.target.value)}
+                        placeholder="Masukkan PIN baru"
+                        className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Ulangi PIN Baru *
+                      </label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        required
+                        value={confirmNewPin}
+                        onChange={(e) => setConfirmNewPin(e.target.value)}
+                        placeholder="Konfirmasi PIN baru"
+                        className="mt-1.5 w-full rounded-lg border border-slate-300 px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                      >
+                        Perbarui PIN Admin
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="max-w-lg rounded-xl border border-indigo-200 bg-indigo-50/80 p-6 text-xs text-indigo-950">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="h-5 w-5 shrink-0 text-indigo-700 mt-0.5" />
+                    <div>
+                      <h3 className="font-bold text-sm text-indigo-900">
+                        Portal Admin View (Mode Monitoring)
+                      </h3>
+                      <p className="mt-1 text-indigo-800 leading-relaxed">
+                        Anda sedang masuk dalam sesi Admin View (Hanya Lihat). Fitur pengubahan PIN Admin Dispatcher dan Pembersihan Cache hanya dapat dilakukan oleh Admin Dispatcher.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Clean Cache Surat Tugas & Factory Reset Card */}
-              {(onPurgeAssignmentsCache || onResetApplication) && (
+              {(onPurgeAssignmentsCache || onResetApplication) && !isReadOnlyView && (
                 <div className="rounded-xl border border-slate-200 bg-white p-6">
                   <h3 className="text-base font-bold text-slate-900">
                     Pembersihan Cache Surat Tugas &amp; Reset Data
@@ -6190,14 +6247,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={openCreateFleetCardModal}
-                    className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Tambah Kartu Fleet Card
-                  </button>
+                  {!isReadOnlyView && (
+                    <button
+                      type="button"
+                      onClick={openCreateFleetCardModal}
+                      className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Tambah Kartu Fleet Card
+                    </button>
+                  )}
                 </div>
 
                 {/* KPI Summary */}
@@ -6373,7 +6432,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                     </span>
                                   </td>
                                   <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                                    <div className="inline-flex items-center justify-end gap-2">
+                                    {isReadOnlyView ? (
+                                      <span className="font-mono text-xs italic text-slate-400">
+                                        Read-Only
+                                      </span>
+                                    ) : (
+                                      <div className="inline-flex items-center justify-end gap-2">
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -6430,7 +6494,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                         Hapus
                                       </button>
                                     </div>
-                                  </td>
+                                  )}
+                                </td>
                                 </tr>
                               );
                             })}
@@ -6477,57 +6542,65 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-2 pt-1">
-                                <button
-                                  type="button"
-                                  onClick={() => openUpdateBalanceModal(card)}
-                                  className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-sky-800 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-900 whitespace-nowrap"
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                  Update Saldo
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openTopUpFleetCardModal(card)}
-                                  className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 whitespace-nowrap"
-                                >
-                                  <Wallet className="h-3.5 w-3.5" />
-                                  Tambah Saldo
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openEditFleetCardModal(card)}
-                                  className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                                >
-                                  <Edit3 className="h-3.5 w-3.5" />
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    triggerConfirm({
-                                      open: true,
-                                      title: `Hapus Kartu Fleet Card ${card.id}?`,
-                                      description:
-                                        'Data kartu ini akan dihapus dari Master Kartu Fleet Card.',
-                                      details: [
-                                        `ID Fleet Card          : ${card.id}`,
-                                        `Nomor Kartu Fleet Card : ${card.cardNumber}`,
-                                        `Saldo Saat Ini         : ${formatIdrCurrency(card.balance)}`,
-                                      ],
-                                      confirmLabel: 'Hapus Kartu',
-                                      variant: 'danger',
-                                      action: async () => {
-                                        await onDeleteFleetCard(card.id);
-                                      },
-                                    })
-                                  }
-                                  className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 whitespace-nowrap"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Hapus
-                                </button>
-                              </div>
+                              {!isReadOnlyView ? (
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openUpdateBalanceModal(card)}
+                                    className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-sky-800 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-900 whitespace-nowrap"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                    Update Saldo
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openTopUpFleetCardModal(card)}
+                                    className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 whitespace-nowrap"
+                                  >
+                                    <Wallet className="h-3.5 w-3.5" />
+                                    Tambah Saldo
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditFleetCardModal(card)}
+                                    className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                                  >
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      triggerConfirm({
+                                        open: true,
+                                        title: `Hapus Kartu Fleet Card ${card.id}?`,
+                                        description:
+                                          'Data kartu ini akan dihapus dari Master Kartu Fleet Card.',
+                                        details: [
+                                          `ID Fleet Card          : ${card.id}`,
+                                          `Nomor Kartu Fleet Card : ${card.cardNumber}`,
+                                          `Saldo Saat Ini         : ${formatIdrCurrency(card.balance)}`,
+                                        ],
+                                        confirmLabel: 'Hapus Kartu',
+                                        variant: 'danger',
+                                        action: async () => {
+                                          await onDeleteFleetCard(card.id);
+                                        },
+                                      })
+                                    }
+                                    className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 whitespace-nowrap"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Hapus
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="text-right pt-1">
+                                  <span className="font-mono text-xs italic text-slate-400">
+                                    Mode Monitoring (Read-Only)
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -6902,10 +6975,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                             exp.fotoStrukBbmUrl
                                           )
                                         }
-                                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline"
+                                        className="group relative mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50/80 p-1 text-left transition-all hover:bg-sky-100 hover:border-sky-300 shadow-2xs"
+                                        title="Klik untuk memperbesar Foto Struk BBM"
                                       >
-                                        <ImageIcon className="h-3 w-3" />
-                                        Lihat Struk BBM
+                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-900">
+                                          <img
+                                            src={bbmImgUrl}
+                                            alt="Struk BBM"
+                                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                          />
+                                        </div>
+                                        <span className="pr-1 text-[11px] font-bold text-sky-900">
+                                          Struk BBM
+                                        </span>
                                       </button>
                                     ) : (
                                       <p className="mt-0.5 text-[11px] text-slate-400">
@@ -6931,10 +7013,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                             exp.fotoStrukTolUrl
                                           )
                                         }
-                                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline"
+                                        className="group relative mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/80 p-1 text-left transition-all hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs"
+                                        title="Klik untuk memperbesar Foto Struk Tol"
                                       >
-                                        <ImageIcon className="h-3 w-3" />
-                                        Lihat Struk Tol
+                                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-900">
+                                          <img
+                                            src={tolImgUrl}
+                                            alt="Struk Tol"
+                                            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                          />
+                                        </div>
+                                        <span className="pr-1 text-[11px] font-bold text-emerald-900">
+                                          Struk Tol
+                                        </span>
                                       </button>
                                     ) : (
                                       <p className="mt-0.5 text-[11px] text-slate-400">
@@ -6948,35 +7039,41 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                   </td>
 
                                   <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        triggerConfirm({
-                                          open: true,
-                                          title: `Hapus Laporan Pengeluaran ${exp.id}?`,
-                                          description:
-                                            'Data pengeluaran akan dihapus dari Data_Pengeluaran Driver, Cloud Database, dan Sheet Pengeluaran_Driver. Saldo kartu Fleet Card yang terpotong akan dikembalikan otomatis.',
-                                          details: [
-                                            `Driver               : ${exp.driverName} (${exp.driverId})`,
-                                            `Tanggal Pengiriman   : ${shippingDate}`,
-                                            `Tujuan Pengiriman    : ${exp.tujuanPengiriman || '-'}`,
-                                            `Nomor Kartu          : ${exp.fleetCardNumber}`,
-                                            `Total Pembelian BBM  : ${formatIdrCurrency(exp.totalPengirimanBbm || 0)}`,
-                                            `Total Pengeluaran Tol: ${formatIdrCurrency(exp.totalPengeluaranTol || 0)}`,
-                                            `Saldo Dikembalikan   : +${formatIdrCurrency(totalVal)}`,
-                                          ],
-                                          confirmLabel: 'Hapus Laporan',
-                                          variant: 'danger',
-                                          action: async () => {
-                                            await onDeleteDriverExpense(exp.id);
-                                          },
-                                        })
-                                      }
-                                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Hapus
-                                    </button>
+                                    {!isReadOnlyView ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          triggerConfirm({
+                                            open: true,
+                                            title: `Hapus Laporan Pengeluaran ${exp.id}?`,
+                                            description:
+                                              'Data pengeluaran akan dihapus dari Data_Pengeluaran Driver, Cloud Database, dan Sheet Pengeluaran_Driver. Saldo kartu Fleet Card yang terpotong akan dikembalikan otomatis.',
+                                            details: [
+                                              `Driver               : ${exp.driverName} (${exp.driverId})`,
+                                              `Tanggal Pengiriman   : ${shippingDate}`,
+                                              `Tujuan Pengiriman    : ${exp.tujuanPengiriman || '-'}`,
+                                              `Nomor Kartu          : ${exp.fleetCardNumber}`,
+                                              `Total Pembelian BBM  : ${formatIdrCurrency(exp.totalPengirimanBbm || 0)}`,
+                                              `Total Pengeluaran Tol: ${formatIdrCurrency(exp.totalPengeluaranTol || 0)}`,
+                                              `Saldo Dikembalikan   : +${formatIdrCurrency(totalVal)}`,
+                                            ],
+                                            confirmLabel: 'Hapus Laporan',
+                                            variant: 'danger',
+                                            action: async () => {
+                                              await onDeleteDriverExpense(exp.id);
+                                            },
+                                          })
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                        Hapus
+                                      </button>
+                                    ) : (
+                                      <span className="font-mono text-xs italic text-slate-400">
+                                        Read-Only
+                                      </span>
+                                    )}
                                   </td>
                                 </tr>
                               );
@@ -7116,32 +7213,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               </div>
 
                               <div className="flex justify-end pt-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    triggerConfirm({
-                                      open: true,
-                                      title: `Hapus Laporan Pengeluaran ${exp.id}?`,
-                                      description:
-                                        'Laporan akan dihapus dan saldo kartu Fleet Card akan dikembalikan.',
-                                      details: [
-                                        `Driver      : ${exp.driverName}`,
-                                        `Pengiriman  : ${shippingDate} · ${exp.tujuanPengiriman || '-'}`,
-                                        `Nomor Kartu : ${exp.fleetCardNumber}`,
-                                        `Total       : ${formatIdrCurrency(totalVal)}`,
-                                      ],
-                                      confirmLabel: 'Hapus Laporan',
-                                      variant: 'danger',
-                                      action: async () => {
-                                        await onDeleteDriverExpense(exp.id);
-                                      },
-                                    })
-                                  }
-                                  className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Hapus Laporan
-                                </button>
+                                {!isReadOnlyView ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      triggerConfirm({
+                                        open: true,
+                                        title: `Hapus Laporan Pengeluaran ${exp.id}?`,
+                                        description:
+                                          'Laporan akan dihapus dan saldo kartu Fleet Card akan dikembalikan.',
+                                        details: [
+                                          `Driver      : ${exp.driverName}`,
+                                          `Pengiriman  : ${shippingDate} · ${exp.tujuanPengiriman || '-'}`,
+                                          `Nomor Kartu : ${exp.fleetCardNumber}`,
+                                          `Total       : ${formatIdrCurrency(totalVal)}`,
+                                        ],
+                                        confirmLabel: 'Hapus Laporan',
+                                        variant: 'danger',
+                                        action: async () => {
+                                          await onDeleteDriverExpense(exp.id);
+                                        },
+                                      })
+                                    }
+                                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Hapus Laporan
+                                  </button>
+                                ) : (
+                                  <span className="font-mono text-xs italic text-slate-400">
+                                    Mode Monitoring (Read-Only)
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );
@@ -9896,7 +9999,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           aria-label="Navigasi bawah Portal Admin"
           className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/90 bg-white/95 backdrop-blur-md pb-safe lg:hidden"
         >
-          <div className="grid h-[60px] grid-cols-5 items-center px-1.5">
+          <div
+            className={`grid h-[60px] ${
+              isReadOnlyView ? 'grid-cols-4' : 'grid-cols-5'
+            } items-center px-1.5`}
+          >
             <button
               type="button"
               onClick={() => setActiveMenu('surat_tugas')}
@@ -9941,7 +10048,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <div className="flex items-center justify-center px-1">
                 <div
                   className="flex h-11 w-full max-w-[78px] flex-col items-center justify-center rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-700 shadow-xs"
-                  title="Portal Admin View · Mode Monitoring (Read-Only)"
+                  title="Portal Admin View · Mode Monitoring"
                 >
                   <Eye className="h-4 w-4" />
                   <span className="text-[9px] font-bold leading-tight">
@@ -9951,18 +10058,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setActiveMenu('master_data')}
-              className={`flex h-full flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
-                activeMenu === 'master_data'
-                  ? 'text-slate-950 font-bold'
-                  : 'text-slate-500 font-medium hover:text-slate-800'
-              }`}
-            >
-              <Database className="h-4 w-4" />
-              <span className="text-[10px] leading-tight">Master</span>
-            </button>
+            {!isReadOnlyView && (
+              <button
+                type="button"
+                onClick={() => setActiveMenu('master_data')}
+                className={`flex h-full flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
+                  activeMenu === 'master_data'
+                    ? 'text-slate-950 font-bold'
+                    : 'text-slate-500 font-medium hover:text-slate-800'
+                }`}
+              >
+                <Database className="h-4 w-4" />
+                <span className="text-[10px] leading-tight">Master</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -9970,9 +10079,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               className={`flex h-full flex-col items-center justify-center gap-0.5 rounded-xl transition-colors ${
                 activeMenu === 'master_fleet_card' ||
                 activeMenu === 'pengeluaran_driver' ||
-                activeMenu === 'notifikasi_wa' ||
-                activeMenu === 'spreadsheets' ||
-                activeMenu === 'ubah_pin'
+                activeMenu === 'notifikasi_wa'
                   ? 'text-slate-950 font-bold'
                   : 'text-slate-500 font-medium hover:text-slate-800'
               }`}

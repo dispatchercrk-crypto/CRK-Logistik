@@ -514,21 +514,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 {driverOnlyView
                   ? 'Portal Akses Khusus Driver · CRK Logistik'
                   : selectedRole === UserRole.ADMIN_VIEW
-                  ? 'Portal Monitoring Read-Only · CRK Logistik'
+                  ? 'Portal Admin View · CRK Logistik'
                   : 'Aplikasi Rantai Pengiriman Dingin'}
               </p>
               <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
                 {driverOnlyView
                   ? 'Masuk Portal Driver'
                   : selectedRole === UserRole.ADMIN_VIEW
-                  ? 'Portal Admin View (Read-Only)'
+                  ? 'Portal Admin View'
                   : 'Masuk ke Sistem Operasional'}
               </h2>
               <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">
                 {driverOnlyView
                   ? 'Pilih ID Driver Anda untuk melaporkan Keberangkatan, Konfirmasi Delivered, dan Serah Terima.'
                   : selectedRole === UserRole.ADMIN_VIEW
-                  ? 'Pantau dashboard operasional, grafik performa SLA countdown, dan status armada secara real-time (mode lihat saja).'
+                  ? 'Pantau dashboard operasional, grafik performa SLA countdown, dan status armada secara real-time.'
                   : 'Pilih peran akses Anda pada CRK LOGISTIK DELIVERY SISTEM.'}
               </p>
             </div>
@@ -900,22 +900,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                         <Eye className="h-4 w-4" />
                       )}
                     </button>
-                  </div>
-                  <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50/70 p-3 text-xs text-sky-900 space-y-1">
-                    <p className="font-semibold flex items-center gap-1.5 text-sky-950">
-                      <Eye className="h-3.5 w-3.5 text-sky-700" />
-                      Mode Monitoring Read-Only
-                    </p>
-                    <p className="text-[11px] text-sky-800 leading-relaxed">
-                      Anda dapat melihat seluruh Dashboard operasional, grafik SLA countdown, dan status tugas, tanpa izin pengeditan data.
-                    </p>
-                    <p className="text-[11px] text-slate-600">
-                      PIN awal standar:{' '}
-                      <span className="font-mono font-semibold text-slate-900 tabular-nums">
-                        123456
-                      </span>{' '}
-                      (dapat diubah oleh Admin Dispatcher pada Data Master Admin View).
-                    </p>
                   </div>
                 </div>
 
