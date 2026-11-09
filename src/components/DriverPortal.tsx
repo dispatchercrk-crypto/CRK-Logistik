@@ -4183,10 +4183,24 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {mySubmittedExpenses.map((exp) => {
+                      const hasBbm = Boolean(
+                        exp.fotoStrukBbm ||
+                          exp.fotoStrukBbmUrl ||
+                          (Number(exp.totalPengirimanBbm) > 0)
+                      );
+                      const hasTol = Boolean(
+                        exp.fotoStrukTol ||
+                          exp.fotoStrukTolUrl ||
+                          (Number(exp.totalPengeluaranTol) > 0)
+                      );
                       const bbmReceiptSrc =
-                        exp.fotoStrukBbm || exp.fotoStrukBbmUrl || '';
+                        exp.fotoStrukBbm && exp.fotoStrukBbm.startsWith('data:image/')
+                          ? exp.fotoStrukBbm
+                          : `/api/driver-expenses/${encodeURIComponent(exp.id)}/media/struk-bbm`;
                       const tolReceiptSrc =
-                        exp.fotoStrukTol || exp.fotoStrukTolUrl || '';
+                        exp.fotoStrukTol && exp.fotoStrukTol.startsWith('data:image/')
+                          ? exp.fotoStrukTol
+                          : `/api/driver-expenses/${encodeURIComponent(exp.id)}/media/struk-tol`;
                       return (
                         <div
                           key={exp.id}
@@ -5207,10 +5221,24 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
               ) : (
                 <div className="mt-4 divide-y divide-slate-100">
                   {mySubmittedExpenses.map((exp) => {
+                    const hasBbm = Boolean(
+                      exp.fotoStrukBbm ||
+                        exp.fotoStrukBbmUrl ||
+                        (Number(exp.totalPengirimanBbm) > 0)
+                    );
+                    const hasTol = Boolean(
+                      exp.fotoStrukTol ||
+                        exp.fotoStrukTolUrl ||
+                        (Number(exp.totalPengeluaranTol) > 0)
+                    );
                     const bbmReceiptSrc =
-                      exp.fotoStrukBbm || exp.fotoStrukBbmUrl || '';
+                      exp.fotoStrukBbm && exp.fotoStrukBbm.startsWith('data:image/')
+                        ? exp.fotoStrukBbm
+                        : `/api/driver-expenses/${encodeURIComponent(exp.id)}/media/struk-bbm`;
                     const tolReceiptSrc =
-                      exp.fotoStrukTol || exp.fotoStrukTolUrl || '';
+                      exp.fotoStrukTol && exp.fotoStrukTol.startsWith('data:image/')
+                        ? exp.fotoStrukTol
+                        : `/api/driver-expenses/${encodeURIComponent(exp.id)}/media/struk-tol`;
                     return (
                       <div
                         key={exp.id}

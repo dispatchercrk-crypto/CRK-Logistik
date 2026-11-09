@@ -6,12 +6,21 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
+  fetchFileMediaFromDriveViaServiceAccount,
   getServiceAccountPublicStatus,
   isGoogleServiceAccountConfigured,
   pullAllTabsViaServiceAccount,
   pushAllTabsViaServiceAccount,
   uploadDataUriToDriveViaServiceAccount,
 } from './src/server/googleServiceAccount.ts';
+import {
+  saveMediaFileLocally,
+  saveRawBufferLocally,
+  getMediaFileLocally,
+  extractGoogleDriveFileId,
+  buildDirectGoogleDriveImageCandidates,
+  fetchRemoteDriveImageBuffer,
+} from './src/server/localMediaVault.ts';
 
 dotenv.config();
 
@@ -4211,12 +4220,30 @@ async function startServer() {
       a.jadwalJamTiba || '',
       a.beratMuatan || '',
       a.driveMedia?.folderUrl || a.driveFolderUrl || '',
-      a.driveMedia?.fotoOdometerBerangkatUrl || '',
-      a.driveMedia?.fotoSuhuBerangkatUrl || '',
-      a.driveMedia?.fotoOdometerSerahTerimaUrl || '',
-      a.driveMedia?.fotoSuhuSerahTerimaUrl || '',
-      a.driveMedia?.fotoBuktiSerahTerimaUrl || '',
-      a.driveMedia?.tandaTanganPenerimaUrl || '',
+      a.driveMedia?.fotoOdometerBerangkatUrl ||
+        (a.departureData?.fotoOdometerBerangkat || getMediaFileLocally('assignments', a.id, 'odo-berangkat')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/odo-berangkat`
+          : ''),
+      a.driveMedia?.fotoSuhuBerangkatUrl ||
+        (a.departureData?.fotoSuhuBerangkat || getMediaFileLocally('assignments', a.id, 'suhu-berangkat')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/suhu-berangkat`
+          : ''),
+      a.driveMedia?.fotoOdometerSerahTerimaUrl ||
+        (a.handoverData?.fotoOdometerSerahTerima || a.deliveredData?.fotoOdometerSampai || getMediaFileLocally('assignments', a.id, 'odo-serahterima')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/odo-serahterima`
+          : ''),
+      a.driveMedia?.fotoSuhuSerahTerimaUrl ||
+        (a.handoverData?.fotoSuhuSerahTerima || a.deliveredData?.fotoSuhuSampai || getMediaFileLocally('assignments', a.id, 'suhu-serahterima')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/suhu-serahterima`
+          : ''),
+      a.driveMedia?.fotoBuktiSerahTerimaUrl ||
+        (a.handoverData?.fotoBuktiSerahTerima || getMediaFileLocally('assignments', a.id, 'bukti-serahterima')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/bukti-serahterima`
+          : ''),
+      a.driveMedia?.tandaTanganPenerimaUrl ||
+        (a.handoverData?.tandaTanganPenerima || getMediaFileLocally('assignments', a.id, 'ttd-penerima')
+          ? `/api/assignments/${encodeURIComponent(a.id)}/media/ttd-penerima`
+          : ''),
       formatDatabaseTimestamp(a.deliveredAt || a.deliveredData?.timestamp),
       a.volumeCbm || '',
     ];
@@ -4491,10 +4518,14 @@ async function startServer() {
         e.fleetCardNumber,
         String(Math.round(Number(e.totalPengirimanBbm) || 0)),
         e.fotoStrukBbmUrl ||
-          (e.fotoStrukBbm ? 'Foto Struk BBM Tersimpan' : ''),
+          (e.fotoStrukBbm || getMediaFileLocally('expenses', e.id, 'struk-bbm')
+            ? `/api/driver-expenses/${encodeURIComponent(e.id)}/media/struk-bbm`
+            : ''),
         String(Math.round(Number(e.totalPengeluaranTol) || 0)),
         e.fotoStrukTolUrl ||
-          (e.fotoStrukTol ? 'Foto Struk Tol Tersimpan' : ''),
+          (e.fotoStrukTol || getMediaFileLocally('expenses', e.id, 'struk-tol')
+            ? `/api/driver-expenses/${encodeURIComponent(e.id)}/media/struk-tol`
+            : ''),
         String(
           Math.round(
             Number(e.totalPengeluaran) ||
@@ -5859,9 +5890,7 @@ async function startServer() {
     });
   });
 
-  // Serve crisp binary Driver Photos & Recipient Signatures directly from server storage
-  // Guarantees 100% cross-device visibility in Admin Dashboard, Print PDF, Spreadsheet Links & Make.com
-  app.get('/api/assignments/:id/media/:slot', (req, res) => {
+  app.get('/api/assignments/:id/media/:slot', async (req, res) => {
     const rawId = String(req.params.id || '').trim();
     const slot = String(req.params.slot || '').trim().toLowerCase();
     const assignment = store.assignments.find(
@@ -5871,6 +5900,17 @@ async function startServer() {
     );
     if (!assignment) {
       res.status(404).json({ error: 'Surat Tugas tidak ditemukan.' });
+      return;
+    }
+
+    // 1. Try local disk cache first!
+    const local = getMediaFileLocally('assignments', assignment.id, slot);
+    if (local && local.buffer.length > 0) {
+      res.setHeader('Content-Type', local.mimeType);
+      res.setHeader('Content-Length', String(local.buffer.length));
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).send(local.buffer);
       return;
     }
 
@@ -5927,26 +5967,57 @@ async function startServer() {
         return;
     }
 
+    // 2. In-memory data URI
     if (rawDataUrl && rawDataUrl.startsWith('data:image/')) {
       const parsed = extractPureBase64AndMimeServer(rawDataUrl);
       if (parsed.pureBase64) {
         const buffer = Buffer.from(parsed.pureBase64, 'base64');
+        saveRawBufferLocally('assignments', assignment.id, slot, buffer, parsed.mimeType);
         res.setHeader('Content-Type', parsed.mimeType);
         res.setHeader('Content-Length', String(buffer.length));
-        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.status(200).send(buffer);
         return;
       }
     }
 
-    if (rawDataUrl && /^https?:\/\//i.test(rawDataUrl)) {
-      res.redirect(302, rawDataUrl);
+    // 3. Resolve Google Drive image binary or direct thumbnail
+    const targetDriveUrl = fallbackDriveUrl || (rawDataUrl.includes('drive.google.com') ? rawDataUrl : '');
+    const driveFileId = extractGoogleDriveFileId(targetDriveUrl);
+
+    if (driveFileId) {
+      // Try service account media download first
+      const saMedia = await fetchFileMediaFromDriveViaServiceAccount(driveFileId);
+      if (saMedia && saMedia.data.length > 500) {
+        saveRawBufferLocally('assignments', assignment.id, slot, saMedia.data, saMedia.mimeType);
+        res.setHeader('Content-Type', saMedia.mimeType);
+        res.setHeader('Content-Length', String(saMedia.data.length));
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(200).send(saMedia.data);
+        return;
+      }
+
+      // Try public thumbnail fetch server-side
+      const remoteImg = await fetchRemoteDriveImageBuffer(driveFileId);
+      if (remoteImg && remoteImg.buffer.length > 500) {
+        saveRawBufferLocally('assignments', assignment.id, slot, remoteImg.buffer, remoteImg.mimeType);
+        res.setHeader('Content-Type', remoteImg.mimeType);
+        res.setHeader('Content-Length', String(remoteImg.buffer.length));
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(200).send(remoteImg.buffer);
+        return;
+      }
+
+      // Direct thumbnail redirect (renderable by <img> tags!)
+      res.redirect(302, `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveFileId)}&sz=w1600`);
       return;
     }
 
-    if (fallbackDriveUrl && /^https?:\/\//i.test(fallbackDriveUrl)) {
-      res.redirect(302, fallbackDriveUrl);
+    if (rawDataUrl && /^https?:\/\//i.test(rawDataUrl)) {
+      res.redirect(302, rawDataUrl);
       return;
     }
 
@@ -6975,6 +7046,15 @@ async function startServer() {
       needsSheetSync: true,
     };
 
+    if (fotoStrukBbm) {
+      saveMediaFileLocally('expenses', createdExpense.id, 'struk-bbm', fotoStrukBbm);
+      saveMediaFileLocally('expenses', createdExpense.id, 'bbm', fotoStrukBbm);
+    }
+    if (fotoStrukTol) {
+      saveMediaFileLocally('expenses', createdExpense.id, 'struk-tol', fotoStrukTol);
+      saveMediaFileLocally('expenses', createdExpense.id, 'tol', fotoStrukTol);
+    }
+
     removeDeletedTombstones('driverExpenses', [createdExpense.id]);
     store.driverExpenses.unshift(createdExpense);
     saveStore(store);
@@ -7112,12 +7192,23 @@ async function startServer() {
     });
   });
 
-  app.get('/api/driver-expenses/:id/media/:slot', (req, res) => {
+  app.get('/api/driver-expenses/:id/media/:slot', async (req, res) => {
     const rawId = String(req.params.id || '').trim();
     const slot = String(req.params.slot || '').trim().toLowerCase();
     const expense = store.driverExpenses.find((e) => e.id === rawId);
     if (!expense) {
       res.status(404).json({ error: 'Data Pengeluaran tidak ditemukan.' });
+      return;
+    }
+
+    // 1. Try local disk cache first!
+    const local = getMediaFileLocally('expenses', expense.id, slot);
+    if (local && local.buffer.length > 0) {
+      res.setHeader('Content-Type', local.mimeType);
+      res.setHeader('Content-Length', String(local.buffer.length));
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).send(local.buffer);
       return;
     }
 
@@ -7134,26 +7225,57 @@ async function startServer() {
       return;
     }
 
+    // 2. In-memory data URI
     if (rawDataUrl && rawDataUrl.startsWith('data:image/')) {
       const parsed = extractPureBase64AndMimeServer(rawDataUrl);
       if (parsed.pureBase64) {
         const buffer = Buffer.from(parsed.pureBase64, 'base64');
+        saveRawBufferLocally('expenses', expense.id, slot, buffer, parsed.mimeType);
         res.setHeader('Content-Type', parsed.mimeType);
         res.setHeader('Content-Length', String(buffer.length));
-        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.status(200).send(buffer);
         return;
       }
     }
 
-    if (rawDataUrl && /^https?:\/\//i.test(rawDataUrl)) {
-      res.redirect(302, rawDataUrl);
+    // 3. Resolve Google Drive image binary or direct thumbnail
+    const targetDriveUrl = fallbackDriveUrl || (rawDataUrl.includes('drive.google.com') ? rawDataUrl : '');
+    const driveFileId = extractGoogleDriveFileId(targetDriveUrl);
+
+    if (driveFileId) {
+      // Try service account media download first
+      const saMedia = await fetchFileMediaFromDriveViaServiceAccount(driveFileId);
+      if (saMedia && saMedia.data.length > 500) {
+        saveRawBufferLocally('expenses', expense.id, slot, saMedia.data, saMedia.mimeType);
+        res.setHeader('Content-Type', saMedia.mimeType);
+        res.setHeader('Content-Length', String(saMedia.data.length));
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(200).send(saMedia.data);
+        return;
+      }
+
+      // Try public thumbnail fetch server-side
+      const remoteImg = await fetchRemoteDriveImageBuffer(driveFileId);
+      if (remoteImg && remoteImg.buffer.length > 500) {
+        saveRawBufferLocally('expenses', expense.id, slot, remoteImg.buffer, remoteImg.mimeType);
+        res.setHeader('Content-Type', remoteImg.mimeType);
+        res.setHeader('Content-Length', String(remoteImg.buffer.length));
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(200).send(remoteImg.buffer);
+        return;
+      }
+
+      // Direct thumbnail redirect (renderable by <img> tags!)
+      res.redirect(302, `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveFileId)}&sz=w1600`);
       return;
     }
 
-    if (fallbackDriveUrl && /^https?:\/\//i.test(fallbackDriveUrl)) {
-      res.redirect(302, fallbackDriveUrl);
+    if (rawDataUrl && /^https?:\/\//i.test(rawDataUrl)) {
+      res.redirect(302, rawDataUrl);
       return;
     }
 
@@ -7700,6 +7822,14 @@ async function startServer() {
       fotoOdometerBerangkat: fotoOdometerBerangkat || undefined,
       fotoSuhuBerangkat: isPendingin && fotoSuhuBerangkat ? fotoSuhuBerangkat : undefined,
     };
+    if (fotoOdometerBerangkat) {
+      saveMediaFileLocally('assignments', assignment.id, 'odo-berangkat', fotoOdometerBerangkat);
+      saveMediaFileLocally('assignments', assignment.id, 'foto-odometer-berangkat', fotoOdometerBerangkat);
+    }
+    if (fotoSuhuBerangkat) {
+      saveMediaFileLocally('assignments', assignment.id, 'suhu-berangkat', fotoSuhuBerangkat);
+      saveMediaFileLocally('assignments', assignment.id, 'foto-suhu-berangkat', fotoSuhuBerangkat);
+    }
     if (assignment.driveMedia && (fotoOdometerBerangkat || fotoSuhuBerangkat)) {
       assignment.driveMedia = {
         ...assignment.driveMedia,
@@ -7889,6 +8019,14 @@ async function startServer() {
       fotoOdometerSampai: fotoOdometerSampai || undefined,
       fotoSuhuSampai: isPendingin && fotoSuhuSampai ? fotoSuhuSampai : undefined,
     };
+    if (fotoOdometerSampai) {
+      saveMediaFileLocally('assignments', assignment.id, 'odo-serahterima', fotoOdometerSampai);
+      saveMediaFileLocally('assignments', assignment.id, 'odo-sampai', fotoOdometerSampai);
+    }
+    if (fotoSuhuSampai) {
+      saveMediaFileLocally('assignments', assignment.id, 'suhu-serahterima', fotoSuhuSampai);
+      saveMediaFileLocally('assignments', assignment.id, 'suhu-sampai', fotoSuhuSampai);
+    }
     if (
       assignment.driveMedia &&
       (req.body?.fotoOdometerSampai || req.body?.fotoSuhuSampai)
@@ -8076,6 +8214,20 @@ async function startServer() {
       fotoBuktiSerahTerima: fotoBuktiSerahTerima || undefined,
       tandaTanganPenerima: tandaTanganPenerima || undefined,
     };
+    if (fotoBuktiSerahTerima) {
+      saveMediaFileLocally('assignments', assignment.id, 'bukti-serahterima', fotoBuktiSerahTerima);
+      saveMediaFileLocally('assignments', assignment.id, 'foto-bukti-serahterima', fotoBuktiSerahTerima);
+    }
+    if (tandaTanganPenerima) {
+      saveMediaFileLocally('assignments', assignment.id, 'ttd-penerima', tandaTanganPenerima);
+      saveMediaFileLocally('assignments', assignment.id, 'tanda-tangan-penerima', tandaTanganPenerima);
+    }
+    if (fotoOdometerSerahTerima) {
+      saveMediaFileLocally('assignments', assignment.id, 'odo-serahterima', fotoOdometerSerahTerima);
+    }
+    if (fotoSuhuSerahTerima) {
+      saveMediaFileLocally('assignments', assignment.id, 'suhu-serahterima', fotoSuhuSerahTerima);
+    }
     if (
       assignment.driveMedia &&
       (req.body?.fotoOdometerSerahTerima ||

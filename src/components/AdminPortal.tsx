@@ -6871,15 +6871,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 exp.fotoStrukTol || exp.fotoStrukTolUrl
                               );
                               const bbmImgUrl =
-                                exp.fotoStrukBbm ||
-                                `/api/driver-expenses/${encodeURIComponent(
-                                  exp.id
-                                )}/media/struk-bbm`;
+                                exp.fotoStrukBbm && exp.fotoStrukBbm.startsWith('data:image/')
+                                  ? exp.fotoStrukBbm
+                                  : `/api/driver-expenses/${encodeURIComponent(
+                                      exp.id
+                                    )}/media/struk-bbm`;
                               const tolImgUrl =
-                                exp.fotoStrukTol ||
-                                `/api/driver-expenses/${encodeURIComponent(
-                                  exp.id
-                                )}/media/struk-tol`;
+                                exp.fotoStrukTol && exp.fotoStrukTol.startsWith('data:image/')
+                                  ? exp.fotoStrukTol
+                                  : `/api/driver-expenses/${encodeURIComponent(
+                                      exp.id
+                                    )}/media/struk-tol`;
                               const totalVal =
                                 Number.isFinite(exp.totalPengeluaran) &&
                                 exp.totalPengeluaran > 0
@@ -7092,15 +7094,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                             exp.fotoStrukTol || exp.fotoStrukTolUrl
                           );
                           const bbmImgUrl =
-                            exp.fotoStrukBbm ||
-                            `/api/driver-expenses/${encodeURIComponent(
-                              exp.id
-                            )}/media/struk-bbm`;
+                            exp.fotoStrukBbm && exp.fotoStrukBbm.startsWith('data:image/')
+                              ? exp.fotoStrukBbm
+                              : `/api/driver-expenses/${encodeURIComponent(
+                                  exp.id
+                                )}/media/struk-bbm`;
                           const tolImgUrl =
-                            exp.fotoStrukTol ||
-                            `/api/driver-expenses/${encodeURIComponent(
-                              exp.id
-                            )}/media/struk-tol`;
+                            exp.fotoStrukTol && exp.fotoStrukTol.startsWith('data:image/')
+                              ? exp.fotoStrukTol
+                              : `/api/driver-expenses/${encodeURIComponent(
+                                  exp.id
+                                )}/media/struk-tol`;
                           const totalVal =
                             Number.isFinite(exp.totalPengeluaran) &&
                             exp.totalPengeluaran > 0

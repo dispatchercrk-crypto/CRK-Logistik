@@ -1005,3 +1005,27 @@ export async function uploadDataUriToDriveViaServiceAccount(params: {
     return null;
   }
 }
+
+export async function fetchFileMediaFromDriveViaServiceAccount(
+  fileId: string
+): Promise<{ data: Buffer; mimeType: string } | null> {
+  if (!fileId || !isGoogleServiceAccountConfigured()) return null;
+  try {
+    const accessToken = await getServiceAccountAccessToken();
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        fileId
+      )}?alt=media&supportsAllDrives=true`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const mimeType = res.headers.get('content-type') || 'image/jpeg';
+    return { data: Buffer.from(arrayBuffer), mimeType };
+  } catch {
+    return null;
+  }
+}

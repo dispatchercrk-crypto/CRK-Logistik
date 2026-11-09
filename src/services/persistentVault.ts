@@ -702,6 +702,30 @@ export async function readCachedAssignmentMediaFromVault(
   Assignment,
   'departureData' | 'deliveredData' | 'handoverData'
 > | null> {
+  if (!assignmentId) return null;
+  try {
+    const directSnap = await idbGet<Assignment>(
+      `${KEY_SURAT_TUGAS_IDB_PREFIX}${assignmentId}`
+    );
+    if (
+      directSnap &&
+      (directSnap.departureData?.fotoOdometerBerangkat ||
+        directSnap.departureData?.fotoSuhuBerangkat ||
+        directSnap.deliveredData?.fotoOdometerSampai ||
+        directSnap.deliveredData?.fotoSuhuSampai ||
+        directSnap.handoverData?.fotoBuktiSerahTerima ||
+        directSnap.handoverData?.tandaTanganPenerima)
+    ) {
+      return {
+        departureData: directSnap.departureData,
+        deliveredData: directSnap.deliveredData,
+        handoverData: directSnap.handoverData,
+      };
+    }
+  } catch {
+    // fallback
+  }
+
   const ws = await idbGet<AppStateResponse>(KEY_WORKSPACE);
   if (!ws || !Array.isArray(ws.assignments)) return null;
   const found = ws.assignments.find((a) => a.id === assignmentId);
