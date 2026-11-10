@@ -2962,17 +2962,49 @@ async function startServer() {
     const syncedExpIdSet = new Set(
       (store.syncedExpenseIds || []).map(normalizeSyncKey)
     );
+    const totalPulledRows =
+      (Array.isArray(assignments) ? assignments.length : 0) +
+      (Array.isArray(drivers) ? drivers.length : 0) +
+      (Array.isArray(vehicles) ? vehicles.length : 0) +
+      (Array.isArray(routes) ? routes.length : 0);
+
+    const isPulledSheetCompletelyBlank =
+      forceReplaceAll !== true &&
+      totalPulledRows === 0 &&
+      (store.assignments.length > 0 || store.drivers.length > 0);
+
+    if (isPulledSheetCompletelyBlank) {
+      store.needsMasterSheetSync = true;
+      store.assignments = store.assignments.map((a) => ({
+        ...a,
+        needsSheetSync: true,
+      }));
+      store.driverExpenses = store.driverExpenses.map((e) => ({
+        ...e,
+        needsSheetSync: true,
+      }));
+      store.lastSyncedAt = new Date().toISOString();
+      if (store.spreadsheetId) {
+        store.lastSyncedSpreadsheetId = store.spreadsheetId.trim();
+      }
+      return {
+        hasPendingDriverUpdates: true,
+        hasPendingMasterUpdates: true,
+        hasCustomPinToPush,
+        hasSheetDeletionsToPrune: false,
+        mutated: false,
+      };
+    }
 
     if (Array.isArray(drivers)) {
       if (forceReplaceAll === true) {
         store.drivers = drivers;
         store.unsyncedDriverIds = [];
       } else if (
-        !hasSyncedThisSheetBefore &&
         drivers.length === 0 &&
         store.drivers.length > 0
       ) {
-        // Brand-new blank Spreadsheet connected for the first time: export initial local drivers
+        // Blank Spreadsheet connected or empty sheet tab: preserve local drivers & mark for push
         hasPendingMasterUpdates = true;
       } else {
         const localById = new Map<string, DriverRecord>();
@@ -3020,7 +3052,6 @@ async function startServer() {
         store.vehicles = vehicles;
         store.unsyncedVehicleIds = [];
       } else if (
-        !hasSyncedThisSheetBefore &&
         vehicles.length === 0 &&
         store.vehicles.length > 0
       ) {
@@ -3073,7 +3104,6 @@ async function startServer() {
         store.routes = routes;
         store.unsyncedRouteIds = [];
       } else if (
-        !hasSyncedThisSheetBefore &&
         routes.length === 0 &&
         store.routes.length > 0
       ) {
@@ -3123,8 +3153,6 @@ async function startServer() {
         store.fleetCards = fleetCards;
         store.unsyncedFleetCardIds = [];
       } else if (
-        (!hasSyncedThisSheetBefore ||
-          (store.syncedFleetCardIds?.length || 0) === 0) &&
         fleetCards.length === 0 &&
         store.fleetCards.length > 0
       ) {
@@ -3199,11 +3227,10 @@ async function startServer() {
     if (Array.isArray(assignments)) {
       if (
         forceReplaceAll !== true &&
-        !hasSyncedThisSheetBefore &&
         assignments.length === 0 &&
         store.assignments.length > 0
       ) {
-        // Brand-new blank Spreadsheet connected for the first time: export initial local assignments
+        // Brand-new blank Spreadsheet connected or empty sheet tab: export local assignments
         hasPendingDriverUpdates = true;
         store.assignments = store.assignments.map((a) => ({
           ...a,
@@ -3374,8 +3401,6 @@ async function startServer() {
     if (Array.isArray(driverExpenses)) {
       if (
         forceReplaceAll !== true &&
-        (!hasSyncedThisSheetBefore ||
-          (store.syncedExpenseIds?.length || 0) === 0) &&
         driverExpenses.length === 0 &&
         store.driverExpenses.length > 0
       ) {
