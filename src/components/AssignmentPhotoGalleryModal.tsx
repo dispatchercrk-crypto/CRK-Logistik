@@ -381,9 +381,9 @@ const ResilientSlotThumbnail: React.FC<ResilientSlotThumbnailProps> = ({
     <button
       type="button"
       onClick={() => onSelect(activeSrc)}
-      title={`Lihat ${slot.title}`}
-      className={`group relative overflow-hidden rounded-md border border-slate-200 bg-white text-left transition-colors hover:border-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
-        compact ? 'h-11 w-14 shrink-0' : 'h-16 w-24 shrink-0'
+      title={`Lihat Thumbnail ${slot.title} (Klik untuk perbesar)`}
+      className={`group relative overflow-hidden rounded-lg border border-slate-300 bg-slate-100 text-left shadow-xs transition-all hover:scale-105 hover:border-sky-500 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600 ${
+        compact ? 'h-12 w-16 shrink-0' : 'h-18 w-24 shrink-0'
       }`}
     >
       <img
@@ -399,10 +399,15 @@ const ResilientSlotThumbnail: React.FC<ResilientSlotThumbnailProps> = ({
           }
         }}
         className={`h-full w-full ${
-          slot.isSignature ? 'object-contain bg-white p-0.5' : 'object-cover'
+          slot.isSignature ? 'object-contain bg-white p-1' : 'object-cover'
         }`}
       />
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-slate-950/70 px-1 py-0.5 text-[9px] font-medium text-white">
+      <div className="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        <span className="rounded-full bg-slate-950/75 p-1 text-white">
+          <Maximize2 className="h-3 w-3" />
+        </span>
+      </div>
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-slate-950/80 px-1 py-0.5 text-[9px] font-semibold text-white">
         {slot.shortLabel}
       </span>
     </button>

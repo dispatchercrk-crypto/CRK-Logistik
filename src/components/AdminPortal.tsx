@@ -145,6 +145,10 @@ function toDatetimeLocalInput(rawStr?: string | Date | null): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 import { PrintableAssignmentModal } from './PrintableAssignmentModal';
+import {
+  AssignmentPhotoGalleryModal,
+  AssignmentPhotoStrip,
+} from './AssignmentPhotoGalleryModal';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
   NotificationBell,
@@ -556,6 +560,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
   // Printable PDF Report Modal State
   const [printableAssignment, setPrintableAssignment] =
+    useState<Assignment | null>(null);
+
+  // Photo Documentation & Signature Gallery Modal State
+  const [selectedPhotoAssignment, setSelectedPhotoAssignment] =
     useState<Assignment | null>(null);
 
   // Fleet Status History Timeline & Daily Operational Summary WA State
@@ -2981,6 +2989,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 ) : null}
                               </div>
 
+                              {/* Real Photo & Signature Interactive Thumbnails */}
+                              <AssignmentPhotoStrip
+                                assignment={asg}
+                                driveRootFolderUrl={config.driveRootFolderUrl}
+                                onOpenGallery={() => setSelectedPhotoAssignment(asg)}
+                                onOpenPrint={() => setPrintableAssignment(asg)}
+                                compact
+                              />
+
                               {/* Touch-Friendly Action Strip */}
                               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                 {!isReadOnlyView && (
@@ -3432,6 +3449,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                         </div>
                                       );
                                     })()}
+                                    <AssignmentPhotoStrip
+                                      assignment={asg}
+                                      driveRootFolderUrl={config.driveRootFolderUrl}
+                                      onOpenGallery={() => setSelectedPhotoAssignment(asg)}
+                                      onOpenPrint={() => setPrintableAssignment(asg)}
+                                      compact
+                                    />
                                   </td>
                                   <td className="px-4 py-3 text-right whitespace-nowrap">
                                     <div className="inline-flex items-center justify-end gap-1">
@@ -10161,6 +10185,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         assignment={printableAssignment}
         onClose={() => setPrintableAssignment(null)}
       />
+
+      {/* Full Photo Documentation & Signature Gallery Modal */}
+      {selectedPhotoAssignment && (
+        <AssignmentPhotoGalleryModal
+          assignment={selectedPhotoAssignment}
+          driveRootFolderUrl={config.driveRootFolderUrl}
+          onOpenPrint={(a) => setPrintableAssignment(a)}
+          onClose={() => setSelectedPhotoAssignment(null)}
+        />
+      )}
     </>
   );
 };

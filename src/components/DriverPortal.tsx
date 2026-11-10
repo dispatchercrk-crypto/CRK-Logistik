@@ -693,16 +693,38 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     [completedTodayTasks, completedTasks]
   );
 
+  // Kunci Tanggal Pengiriman * dari Tanggal & Waktu Tugas * Surat Tugas
   useEffect(() => {
-    if (!expenseTanggalPengiriman) {
-      setExpenseTanggalPengiriman(
-        relevantCompletedTasks[0]?.tanggalTugas || todayWibDateStr
-      );
-    }
-  }, [relevantCompletedTasks, todayWibDateStr, expenseTanggalPengiriman]);
+    const extractTaskDate = (raw?: string | null): string => {
+      if (!raw) return '';
+      const str = String(raw).trim();
+      const ymd = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+      const dmy = str.match(/^(\d{2})-(\d{2})-(\d{4})/);
+      if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      }
+      return str;
+    };
 
+    const targetTask =
+      relevantCompletedTasks[0] ||
+      (myAssignments.length > 0 ? myAssignments[0] : null);
+    if (targetTask?.tanggalTugas) {
+      const parsed = extractTaskDate(targetTask.tanggalTugas);
+      if (parsed) {
+        setExpenseTanggalPengiriman(parsed);
+      }
+    } else if (!expenseTanggalPengiriman) {
+      setExpenseTanggalPengiriman(todayWibDateStr);
+    }
+  }, [relevantCompletedTasks, myAssignments, todayWibDateStr, expenseTanggalPengiriman]);
+
+  // Kunci Tujuan Pengiriman * pemanggil Data dari Rute Tugas Selesai
   useEffect(() => {
-    if (tujuanManuallyEdited || expenseTujuanPengiriman.trim()) return;
     const completedDestinations = Array.from(
       new Set(
         relevantCompletedTasks
@@ -711,10 +733,15 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       )
     );
     if (completedDestinations.length > 0) {
-      setExpenseTujuanList(completedDestinations);
-      setExpenseTujuanPengiriman(completedDestinations.join(', '));
+      const joined = completedDestinations.join(', ');
+      setExpenseTujuanPengiriman(joined);
+      setExpenseTujuanList([joined]);
+    } else if (myAssignments.length > 0 && myAssignments[0].destination) {
+      const dest = String(myAssignments[0].destination).trim();
+      setExpenseTujuanPengiriman(dest);
+      setExpenseTujuanList([dest]);
     }
-  }, [relevantCompletedTasks, tujuanManuallyEdited, expenseTujuanPengiriman]);
+  }, [relevantCompletedTasks, myAssignments]);
 
   const destinationQuickOptions = useMemo(() => {
     const set = new Set<string>();
@@ -792,16 +819,16 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     }
 
     const cleanTujuanPengiriman =
-      expenseTujuanList.map((t) => t.trim()).filter(Boolean).join(', ') ||
-      expenseTujuanPengiriman.trim();
+      expenseTujuanPengiriman.trim() ||
+      expenseTujuanList.map((t) => t.trim()).filter(Boolean).join(', ');
     if (!cleanTujuanPengiriman) {
-      setExpenseValidationErr('Minimal 1 Tujuan Pengiriman wajib diisi atau dipilih.');
+      setExpenseValidationErr('Tujuan Pengiriman wajib terisi dari Surat Tugas Selesai.');
       return;
     }
 
-    if (parsedBbmNominal <= 0 && parsedTolNominal <= 0) {
+    if (parsedBbmNominal < 0 || parsedTolNominal < 0) {
       setExpenseValidationErr(
-        'Masukkan nominal Total Pembelian BBM atau Total Pengeluaran Tol (minimal salah satu lebih dari Rp 0).'
+        'Nominal Total Pembelian BBM atau Tol tidak boleh negatif.'
       );
       return;
     }
@@ -4892,118 +4919,63 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     </div>
                   </div>
 
-                  {/* 3. Tanggal Pengiriman & Tujuan Pengiriman */}
+                  {/* 3. Tanggal Pengiriman & Tujuan Pengiriman (Terkunci Otomatis dari Surat Tugas Selesai) */}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                      <label
-                        htmlFor="driver-expense-tanggal-pengiriman"
-                        className="block text-xs font-bold text-slate-800"
-                      >
-                        Tanggal Pengiriman{' '}
-                        <span className="text-rose-600">*</span>
-                      </label>
+                      <div className="flex items-center justify-between gap-1">
+                        <label
+                          htmlFor="driver-expense-tanggal-pengiriman"
+                          className="flex items-center gap-1.5 text-xs font-bold text-slate-800"
+                        >
+                          <Lock className="h-3.5 w-3.5 text-sky-700" />
+                          <span>Tanggal Pengiriman</span>
+                          <span className="text-rose-600">*</span>
+                        </label>
+                        <span className="inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 border border-sky-200">
+                          <Lock className="h-2.5 w-2.5" />
+                          Kunci Data Surat Tugas
+                        </span>
+                      </div>
                       <input
                         id="driver-expense-tanggal-pengiriman"
                         type="date"
                         required
+                        readOnly
                         value={expenseTanggalPengiriman}
-                        onChange={(e) => {
-                          setExpenseTanggalPengiriman(e.target.value);
-                          setExpenseValidationErr('');
-                        }}
-                        className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                        className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-slate-100/80 px-3.5 py-2.5 font-mono text-sm font-semibold text-slate-800 tabular-nums cursor-not-allowed focus:outline-none"
                       />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Otomatis dikunci dari Tanggal &amp; Waktu Tugas pada Form Terbitkan Surat Tugas.
+                      </p>
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="block text-xs font-bold text-slate-800">
-                          Tujuan Pengiriman <span className="text-rose-600">*</span>
+                      <div className="flex items-center justify-between gap-1">
+                        <label
+                          htmlFor="driver-expense-tujuan-pengiriman"
+                          className="flex items-center gap-1.5 text-xs font-bold text-slate-800"
+                        >
+                          <Lock className="h-3.5 w-3.5 text-sky-700" />
+                          <span>Tujuan Pengiriman</span>
+                          <span className="text-rose-600">*</span>
                         </label>
-                        <span className="text-[11px] font-medium text-slate-500">
-                          {expenseTujuanList.filter((t) => t.trim()).length > 0
-                            ? `${expenseTujuanList.filter((t) => t.trim()).length} Tujuan Terisi`
-                            : 'Bisa tambah lebih dari 1 tujuan'}
+                        <span className="inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 border border-sky-200">
+                          <Lock className="h-2.5 w-2.5" />
+                          Kunci Rute Tugas Selesai
                         </span>
                       </div>
-
-                      {/* Quick picker dropdown to quickly add from Master Rute or Tugas Selesai */}
-                      {destinationQuickOptions.length > 0 && (
-                        <div className="mt-1.5">
-                          <select
-                            aria-label="Pilih cepat Tujuan Pengiriman dari Master Rute atau Tugas Hari Ini"
-                            value=""
-                            onChange={(e) => {
-                              const picked = e.target.value;
-                              if (!picked) return;
-                              setTujuanManuallyEdited(true);
-                              setExpenseTujuanList((prev) => {
-                                let next: string[];
-                                if (prev.length === 1 && !prev[0].trim()) {
-                                  next = [picked];
-                                } else if (!prev.includes(picked)) {
-                                  next = [...prev, picked];
-                                } else {
-                                  next = prev;
-                                }
-                                const joined = next.map((t) => t.trim()).filter(Boolean).join(', ');
-                                setExpenseTujuanPengiriman(joined);
-                                return next;
-                              });
-                              setExpenseValidationErr('');
-                            }}
-                            className="w-full min-h-[40px] rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 focus:border-slate-900 focus:outline-none"
-                          >
-                            <option value="">
-                              + Pilih Cepat dari Daftar Rute / Tugas Selesai...
-                            </option>
-                            {destinationQuickOptions.map((dest) => (
-                              <option key={dest} value={dest}>
-                                {dest}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Multi-destination dynamic inputs */}
-                      <div className="mt-2 space-y-2">
-                        {expenseTujuanList.map((tujuanItem, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <div className="relative flex-1">
-                              <input
-                                type="text"
-                                required={idx === 0}
-                                maxLength={240}
-                                value={tujuanItem}
-                                onChange={(e) => handleUpdateTujuanRow(idx, e.target.value)}
-                                placeholder={`Tujuan Pengiriman ${idx + 1} (contoh: Gudang DC Cibitung)`}
-                                className="w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:border-slate-900 focus:outline-none"
-                              />
-                            </div>
-                            {expenseTujuanList.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveTujuanRow(idx)}
-                                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                                title={`Hapus Tujuan ${idx + 1}`}
-                                aria-label={`Hapus Tujuan Pengiriman ${idx + 1}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleAddTujuanRow}
-                        className="mt-2.5 inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-dashed border-sky-400 bg-sky-50/60 px-3.5 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100 hover:text-sky-900 transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Tambah Kolom Tujuan Pengiriman
-                      </button>
+                      <input
+                        id="driver-expense-tujuan-pengiriman"
+                        type="text"
+                        required
+                        readOnly
+                        value={expenseTujuanPengiriman}
+                        placeholder="Rute Tujuan Tugas Selesai"
+                        className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-slate-100/80 px-3.5 py-2.5 text-sm font-semibold text-slate-800 cursor-not-allowed focus:outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Otomatis dikunci dari Rute Surat Tugas yang telah diselesaikan Driver.
+                      </p>
                     </div>
                   </div>
 
@@ -5035,15 +5007,25 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           className="w-full min-h-[44px] rounded-xl border border-slate-300 bg-white py-2.5 pr-3.5 pl-10 font-mono text-sm font-semibold text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
                         />
                       </div>
-                      <p className="mt-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
-                        Nominal Terbaca: {formatIdrCurrency(parsedBbmNominal)}
-                      </p>
+                      <div className="mt-1.5 flex items-center justify-between text-xs">
+                        <span className="font-mono font-semibold text-slate-700 tabular-nums">
+                          Terbaca: {formatIdrCurrency(parsedBbmNominal)}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          (Isi 0 jika tanpa BBM)
+                        </span>
+                      </div>
                     </div>
 
                     <div>
                       <PhotoUploadField
                         label="Foto Struk Pengeluaran BBM"
-                        helperText="Ambil foto struk SPBU / bukti transaksi BBM yang jelas"
+                        helperText={
+                          parsedBbmNominal > 0
+                            ? 'Wajib: Ambil foto struk SPBU / bukti transaksi BBM'
+                            : 'Bisa dilewati jika pengeluaran BBM adalah Rp 0'
+                        }
+                        required={parsedBbmNominal > 0}
                         value={fotoStrukBbm}
                         onChange={(val) => {
                           setFotoStrukBbm(val);
@@ -5081,15 +5063,25 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           className="w-full min-h-[44px] rounded-xl border border-slate-300 bg-white py-2.5 pr-3.5 pl-10 font-mono text-sm font-semibold text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
                         />
                       </div>
-                      <p className="mt-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums">
-                        Nominal Terbaca: {formatIdrCurrency(parsedTolNominal)}
-                      </p>
+                      <div className="mt-1.5 flex items-center justify-between text-xs">
+                        <span className="font-mono font-semibold text-slate-700 tabular-nums">
+                          Terbaca: {formatIdrCurrency(parsedTolNominal)}
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          (Isi 0 jika tanpa Tol)
+                        </span>
+                      </div>
                     </div>
 
                     <div>
                       <PhotoUploadField
                         label="Foto Struk Pengeluaran Tol"
-                        helperText="Ambil foto struk gerbang tol / rincian pemakaian tol"
+                        helperText={
+                          parsedTolNominal > 0
+                            ? 'Wajib: Ambil foto struk gerbang tol / rincian pemakaian tol'
+                            : 'Bisa dilewati jika pengeluaran Tol adalah Rp 0'
+                        }
+                        required={parsedTolNominal > 0}
                         value={fotoStrukTol}
                         onChange={(val) => {
                           setFotoStrukTol(val);

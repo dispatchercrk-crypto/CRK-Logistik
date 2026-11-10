@@ -2503,6 +2503,33 @@ async function startServer() {
     res.json({ success: true, restored: false, state: buildPublicState() });
   });
 
+function setSecureSessionCookie(res: express.Response, sessionData: object): void {
+  try {
+    const payload = JSON.stringify({
+      ...sessionData,
+      iat: Date.now(),
+    });
+    const token = Buffer.from(payload, 'utf8').toString('base64');
+    const maxAge = 315360000; // 10 years in seconds
+    // HttpOnly: Wajib aktif untuk mencegah XSS script membaca cookie melalui document.cookie
+    // Secure: Wajib aktif untuk memastikan cookie hanya dikirim via koneksi terenkripsi HTTPS
+    // SameSite=Lax: Melindungi aplikasi dari serangan Cross-Site Request Forgery (CSRF)
+    res.setHeader(
+      'Set-Cookie',
+      `crk_session_token=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
+    );
+  } catch {
+    // Ignore error
+  }
+}
+
+function clearSecureSessionCookie(res: express.Response): void {
+  res.setHeader(
+    'Set-Cookie',
+    'crk_session_token=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure; SameSite=Lax'
+  );
+}
+
   // Resilient Driver Login
   app.post('/api/auth/driver', async (req, res) => {
     adoptConfigSnapshotIfMissing(req.body?.configSnapshot);
@@ -2572,6 +2599,12 @@ async function startServer() {
       return;
     }
 
+    setSecureSessionCookie(res, {
+      role: 'DRIVER',
+      driverId: driver.id,
+      driverName: driver.name,
+    });
+
     res.json({
       success: true,
       driver,
@@ -2590,6 +2623,10 @@ async function startServer() {
       res.status(401).json({ error: 'PIN Admin Dispatcher tidak valid.' });
       return;
     }
+
+    setSecureSessionCookie(res, {
+      role: 'ADMIN',
+    });
 
     res.json({
       success: true,
@@ -2649,6 +2686,12 @@ async function startServer() {
       return;
     }
 
+    setSecureSessionCookie(res, {
+      role: 'ADMIN_VIEW',
+      adminViewId: matched.id,
+      name: matched.name,
+    });
+
     res.json({
       success: true,
       adminView: {
@@ -2658,6 +2701,31 @@ async function startServer() {
         description: matched.description || 'Viewer Dashboard Monitoring Saja',
       },
     });
+  });
+
+  // Session status verification & sliding renewal
+  app.get('/api/auth/session', (req, res) => {
+    const cookieHeader = req.headers.cookie || '';
+    const match = cookieHeader.match(/(?:^|;\s*)crk_session_token=([^;]+)/);
+    if (!match) {
+      res.json({ authenticated: false, session: null });
+      return;
+    }
+    try {
+      const jsonStr = Buffer.from(match[1], 'base64').toString('utf8');
+      const parsed = JSON.parse(jsonStr);
+      // Renew cookie window
+      setSecureSessionCookie(res, parsed);
+      res.json({ authenticated: true, session: parsed });
+    } catch {
+      res.json({ authenticated: false, session: null });
+    }
+  });
+
+  // Logout & clear HttpOnly session cookie
+  app.post('/api/auth/logout', (_req, res) => {
+    clearSecureSessionCookie(res);
+    res.json({ success: true });
   });
 
   // Admin Change Own PIN
@@ -7062,10 +7130,9 @@ async function startServer() {
       return;
     }
 
-    if (totalPengirimanBbm <= 0 && totalPengeluaranTol <= 0) {
+    if (totalPengirimanBbm < 0 || totalPengeluaranTol < 0) {
       res.status(400).json({
-        error:
-          'Masukkan nominal Total Pembelian BBM atau Total Pengeluaran Tol minimal salah satu lebih dari Rp 0.',
+        error: 'Nominal Total Pembelian BBM atau Tol tidak boleh bernilai negatif.',
       });
       return;
     }
