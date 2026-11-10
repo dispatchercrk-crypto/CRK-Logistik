@@ -6,9 +6,9 @@
   "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac/edit",
   "appsScriptUrl": "https://script.google.com/macros/s/AKfycbz8pCRDJCL9JhbYRMHmYlPlgefG-KyQNDgiAOnb9MrSOHsKjVbv5jj-FIvcRnd1OEBS/exec",
   "liveCsvReadable": true,
-  "driveRootFolderId": "1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
-  "driveRootFolderUrl": "https://drive.google.com/drive/folders/1Q5RqA-tsXU5_7k9GTttPwpLbI888CNjo",
-  "lastSyncedAt": "2026-11-09T08:15:03.856Z",
+  "driveRootFolderId": "1KxUKh-Lu-CebrkUmP-VP69-kPXFMJql-",
+  "driveRootFolderUrl": "https://drive.google.com/drive/folders/1KxUKh-Lu-CebrkUmP-VP69-kPXFMJql-",
+  "lastSyncedAt": "2026-11-10T01:22:57.823Z",
   "lastSyncedSpreadsheetId": "1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac",
   "syncedDriverIds": [
     "drv-001",
@@ -44,7 +44,15 @@
     "rt-012",
     "rt-013",
     "rt-014",
-    "rt-015"
+    "rt-015",
+    "rt-016",
+    "rt-017",
+    "rt-018",
+    "rt-019",
+    "rt-020",
+    "rt-021",
+    "rt-022",
+    "rt-023"
   ],
   "syncedFleetCardIds": [
     "fc-001",
@@ -56,7 +64,8 @@
     "fc-009",
     "fc-005",
     "fc-011",
-    "fc-013"
+    "fc-013",
+    "fc-010"
   ],
   "syncedAssignmentNos": [
     "st-crk/2026/08/0001",
@@ -73,11 +82,22 @@
     "st-crk/2026/09/0038",
     "st-crk/2026/09/0039",
     "st-crk/2026/09/0040",
-    "st-crk/2026/09/0041"
+    "st-crk/2026/09/0041",
+    "st-crk/2026/09/0042",
+    "st-crk/2026/09/0043",
+    "st-crk/2026/09/0044",
+    "st-crk/2026/09/0045",
+    "st-crk/2026/09/0046",
+    "st-crk/2026/09/0047",
+    "st-crk/2026/09/0052",
+    "st-crk/2026/09/0053",
+    "st-crk/2026/09/0054",
+    "st-crk/2026/09/0055"
   ],
   "syncedExpenseIds": [
     "exp-1794173812297-yecc",
-    "exp-1794195132435-mip3"
+    "exp-1794195132435-mip3",
+    "exp-1794241219681-7qa4"
   ],
   "unsyncedDriverIds": [],
   "unsyncedVehicleIds": [],
@@ -176,14 +196,6 @@
     ],
     "vehicles": [],
     "routes": [
-      "rt-016",
-      "rt-017",
-      "rt-018",
-      "rt-019",
-      "rt-020",
-      "rt-021",
-      "rt-022",
-      "rt-023",
       "rt-024",
       "rt-025",
       "rt-026",
@@ -214,8 +226,7 @@
     ],
     "fleetCards": [
       "fc-003",
-      "fc-006",
-      "fc-010"
+      "fc-006"
     ],
     "driverExpenses": [
       "exp-1793943269189-rt15",
@@ -231,7 +242,7 @@
   "whatsappGroupInviteUrl": "https://chat.whatsapp.com/KAZTVJP9ET50OBTg9gNIy4?s=cl&p=a&mlu=4&ilr=4",
   "publicPortalBaseUrl": "",
   "letterPrefix": "ST-CRK",
-  "lastSequence": 41,
+  "lastSequence": 55,
   "needsMasterSheetSync": false,
   "drivers": [
     {
@@ -314,7 +325,7 @@
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "capacity": "5 Ton",
       "capacityCbm": "20 CBM",
-      "status": "Siap Jalan"
+      "status": "Dalam Tugas"
     },
     {
       "id": "UNT-002",
@@ -322,7 +333,7 @@
       "vehicleType": "HINO CDD BOX FREEZER",
       "capacity": "5 Ton",
       "capacityCbm": "20 CBM",
-      "status": "Siap Jalan"
+      "status": "Dalam Tugas"
     },
     {
       "id": "UNT-003",
@@ -330,7 +341,7 @@
       "vehicleType": "Suzuki Carry Box Tanduk",
       "capacity": "1 Ton",
       "capacityCbm": "6 CBM",
-      "status": "Siap Jalan"
+      "status": "Dalam Tugas"
     },
     {
       "id": "UNT-004",
@@ -354,7 +365,7 @@
       "vehicleType": "Isuzu Traga Box Freezer",
       "capacity": "1.5 Ton",
       "capacityCbm": "6 CBM",
-      "status": "Dalam Tugas"
+      "status": "Siap Jalan"
     }
   ],
   "routes": [
@@ -447,6 +458,54 @@
       "destination": "KIOS SIGNATURE BRAGA",
       "picName": "",
       "picPhone": ""
+    },
+    {
+      "id": "RT-016",
+      "destination": "WH-CISIRUNG",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-017",
+      "destination": "WH-PASIR IMPUN",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-018",
+      "destination": "KIOS LEGOSO RAYA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-019",
+      "destination": "KIOS SURYA KENCANA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-020",
+      "destination": "KIOS CIREUNDEU",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-021",
+      "destination": "KIOS JOMBANG RAYA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-022",
+      "destination": "KIOS CEGER RAYA",
+      "picName": "",
+      "picPhone": ""
+    },
+    {
+      "id": "RT-023",
+      "destination": "KIOS SERPONG CISAUK",
+      "picName": "",
+      "picPhone": ""
     }
   ],
   "fleetCards": [
@@ -493,12 +552,17 @@
     {
       "id": "FC-011",
       "cardNumber": "0145-0084-0217-5581",
-      "balance": 1445500
+      "balance": 876500
     },
     {
       "id": "FC-013",
       "cardNumber": "0145-0084-0244-0134",
-      "balance": 1067000
+      "balance": 867000
+    },
+    {
+      "id": "FC-010",
+      "cardNumber": "0145-0084-0244-0142",
+      "balance": 812000
     }
   ],
   "adminViews": [
@@ -878,7 +942,7 @@
       "purpose": "FG",
       "beratMuatan": "500 Kg",
       "volumeCbm": "1,008 CBM",
-      "status": "Delivered",
+      "status": "Handover",
       "deliveredAt": "09-11-2026;13:28:13",
       "departureData": {
         "timestamp": "09-11-2026;13:05:18",
@@ -897,14 +961,25 @@
         "suhuSampai": "-15",
         "bbmSampai": "3/4 Tangki",
         "kondisiSampai": "Suhu & Segel Utuh - Lengkap",
-        "catatanSampai": "ASTRO CILEUNGSI"
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "09-11-2026;17:23:41",
+        "kmAkhir": 117611,
+        "suhuAkhir": "-15",
+        "bbmAkhir": "3/4 Tangki",
+        "penerimaNama": "M arif",
+        "kondisiAkhir": "Suhu & Segel Utuh - Lengkap",
+        "catatanSerahTerima": "ASTRO CILEUNGSI"
       },
       "driveFolderUrl": "https://drive.google.com/drive/folders/1UjuDMB8iNf45ec6c2od5yadBbQu4HFbC",
       "driveMedia": {
         "folderId": "1UjuDMB8iNf45ec6c2od5yadBbQu4HFbC",
         "folderUrl": "https://drive.google.com/drive/folders/1UjuDMB8iNf45ec6c2od5yadBbQu4HFbC",
         "fotoOdometerBerangkatUrl": "https://drive.google.com/file/d/1cCV8GGOqTUIk2A1kgpSzHGNwXUPxFoaa/view?usp=drivesdk",
-        "fotoSuhuBerangkatUrl": "https://drive.google.com/file/d/19YYa0AaXwIIBhKmXrbBrf2OF8p1L-lNs/view?usp=drivesdk"
+        "fotoSuhuBerangkatUrl": "https://drive.google.com/file/d/19YYa0AaXwIIBhKmXrbBrf2OF8p1L-lNs/view?usp=drivesdk",
+        "fotoBuktiSerahTerimaUrl": "https://drive.google.com/file/d/1l1TNF70-IbjUaDxazewbHG343yBz8TKD/view?usp=drivesdk",
+        "tandaTanganPenerimaUrl": "https://drive.google.com/file/d/1-_QHLpRK1zOuO2c9bRvkcrp3xGTRS32e/view?usp=drivesdk"
       },
       "notes": "",
       "createdAt": "09-11-2026;07:39:49",
@@ -915,7 +990,7 @@
       "sequenceNumber": 34,
       "noPenugasan": "ST-CRK/2026/09/0034",
       "noSuratJalanFisik": "DC/INT/",
-      "kodeSegel": "CRK.BDO.40195.0910",
+      "kodeSegel": "CRK.BDO.40195.",
       "tanggalTugas": "09-11-2026;09:47:35",
       "driverId": "DRV-006",
       "driverName": "DJADJANG SUPRIYADI",
@@ -927,7 +1002,7 @@
       "origin": "Menunggu Titik Keberangkatan Driver",
       "routeId": "RT-014",
       "destination": "Kios Cimaung",
-      "purpose": "FG & RM PM",
+      "purpose": "400 Kg",
       "beratMuatan": "400 Kg",
       "volumeCbm": "0,672 CBM",
       "status": "Menunggu Berangkat",
@@ -949,13 +1024,51 @@
       "plateNumber": "D 8254 FV",
       "vehicleType": "Suzuki Carry Box Freezer",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Wh pasir impun",
       "routeId": "RT-015",
       "destination": "Kios Signature Braga",
       "purpose": "FG & RM PM",
       "beratMuatan": "500 Kg",
       "volumeCbm": "0,84 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "09-11-2026;22:31:58",
+      "departureData": {
+        "timestamp": "09-11-2026;21:58:54",
+        "titikKeberangkatan": "Wh pasir impun",
+        "jenisKendaraan": "Non Pendingin",
+        "kmAwal": 63298,
+        "suhuAwal": "",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Segel & Muatan Aman",
+        "catatanBerangkat": "Segel terpasang rapat"
+      },
+      "deliveredData": {
+        "timestamp": "09-11-2026;22:31:58",
+        "jenisKendaraan": "Non Pendingin",
+        "kmSampai": 63309,
+        "suhuSampai": "",
+        "bbmSampai": "1/2 Tangki",
+        "kondisiSampai": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "09-11-2026;22:53:40",
+        "kmAkhir": 63309,
+        "suhuAkhir": "",
+        "bbmAkhir": "1/2 Tangki",
+        "penerimaNama": "Alvian",
+        "kondisiAkhir": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSerahTerima": "Serah terima lengkap sesuai SJ"
+      },
+      "driveFolderUrl": "https://drive.google.com/drive/folders/1t_NJqRDpGGvtwM1XjGSr9JbnOIomRqAf",
+      "driveMedia": {
+        "folderId": "1t_NJqRDpGGvtwM1XjGSr9JbnOIomRqAf",
+        "folderUrl": "https://drive.google.com/drive/folders/1t_NJqRDpGGvtwM1XjGSr9JbnOIomRqAf",
+        "fotoOdometerBerangkatUrl": "https://drive.google.com/file/d/14xNFh-_2AY6jhdrwiVLSyfsrqPbOU7cX/view?usp=drivesdk",
+        "fotoOdometerSerahTerimaUrl": "https://drive.google.com/file/d/1m8_VdMGFNQ0vy_bDYeHE20gZKvbXY08z/view?usp=drivesdk",
+        "fotoBuktiSerahTerimaUrl": "https://drive.google.com/file/d/1d4Cy5KJPtI93Dog5hWJUMTOTGUd5F3Y2/view?usp=drivesdk",
+        "tandaTanganPenerimaUrl": "https://drive.google.com/file/d/1NszN9NQ90nc6-1ak40y01L5HbgZcbPYl/view?usp=drivesdk"
+      },
       "notes": "",
       "createdAt": "09-11-2026;10:06:18",
       "needsSheetSync": false
@@ -974,12 +1087,52 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "MTP",
       "routeId": "RT-011",
       "destination": "DC BOGOR",
       "purpose": "FG",
       "volumeCbm": "1,944 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "09-11-2026;22:41:32",
+      "departureData": {
+        "timestamp": "09-11-2026;21:26:08",
+        "titikKeberangkatan": "MTP",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140747,
+        "suhuAwal": "1.6",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Segel terpasang"
+      },
+      "deliveredData": {
+        "timestamp": "09-11-2026;22:41:32",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140791,
+        "suhuSampai": "-8.9",
+        "bbmSampai": "1/2 Tangki",
+        "kondisiSampai": "Suhu & Segel Utuh - Lengkap",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "09-11-2026;23:08:13",
+        "kmAkhir": 140791,
+        "suhuAkhir": "-8.9",
+        "bbmAkhir": "1/2 Tangki",
+        "penerimaNama": "Lukman Hakim",
+        "kondisiAkhir": "Suhu & Segel Utuh - Lengkap",
+        "catatanSerahTerima": "Barang sesuai"
+      },
+      "driveFolderUrl": "https://drive.google.com/drive/folders/1fjTee3tY45Lsa8_nKGOlawU_dlMygtFK",
+      "driveMedia": {
+        "folderId": "1fjTee3tY45Lsa8_nKGOlawU_dlMygtFK",
+        "folderUrl": "https://drive.google.com/drive/folders/1fjTee3tY45Lsa8_nKGOlawU_dlMygtFK",
+        "fotoOdometerBerangkatUrl": "https://drive.google.com/file/d/1AEqI_d1DepkXYyKM0UQlAreEb9j1L-bJ/view?usp=drivesdk",
+        "fotoSuhuBerangkatUrl": "https://drive.google.com/file/d/1mDdcg6rerVBVxwvcTwSf0oY_xJx6F2-r/view?usp=drivesdk",
+        "fotoOdometerSerahTerimaUrl": "https://drive.google.com/file/d/1Q4Z-56eLV-prGyoR_ULX6Tv0Y_I45u_K/view?usp=drivesdk",
+        "fotoSuhuSerahTerimaUrl": "https://drive.google.com/file/d/1RmmVA4ktPzp4rcooid9zNNWfh0CELWKe/view?usp=drivesdk",
+        "fotoBuktiSerahTerimaUrl": "https://drive.google.com/file/d/1DxqGricz_LjCuFrL3ThZdCUaTppbmv1w/view?usp=drivesdk",
+        "tandaTanganPenerimaUrl": "https://drive.google.com/file/d/1dMNBSl3h0HDlU3EvXf_aPPG7a0zzqJIN/view?usp=drivesdk"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:20:35",
       "needsSheetSync": false
@@ -998,12 +1151,52 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Dc Bogor",
       "routeId": "RT-010",
       "destination": "DC DEPOK",
-      "purpose": "FG",
+      "purpose": "",
       "volumeCbm": "1,8 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "09-11-2026;23:59:32",
+      "departureData": {
+        "timestamp": "09-11-2026;23:11:23",
+        "titikKeberangkatan": "Dc Bogor",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140791,
+        "suhuAwal": "7.5",
+        "bbmAwal": "3/4 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "No Segel"
+      },
+      "deliveredData": {
+        "timestamp": "09-11-2026;23:59:32",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140829,
+        "suhuSampai": "-8.2",
+        "bbmSampai": "1/2 Tangki",
+        "kondisiSampai": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "10-11-2026;00:13:02",
+        "kmAkhir": 140829,
+        "suhuAkhir": "-8.2",
+        "bbmAkhir": "1/2 Tangki",
+        "penerimaNama": "Syakir MH",
+        "kondisiAkhir": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSerahTerima": "Barang sesuai"
+      },
+      "driveFolderUrl": "https://drive.google.com/drive/folders/16jlx--Dvx_x8L9pG4dZYfrfwd3zBD3Xv",
+      "driveMedia": {
+        "folderId": "16jlx--Dvx_x8L9pG4dZYfrfwd3zBD3Xv",
+        "folderUrl": "https://drive.google.com/drive/folders/16jlx--Dvx_x8L9pG4dZYfrfwd3zBD3Xv",
+        "fotoOdometerBerangkatUrl": "https://drive.google.com/file/d/1aZ2otv9lyDO5lqCWdwCUK28-Ab-UVrI3/view?usp=drivesdk",
+        "fotoSuhuBerangkatUrl": "https://drive.google.com/file/d/1h3IEEiP5mKvj809oQLU-foS_GIoupXG6/view?usp=drivesdk",
+        "fotoOdometerSerahTerimaUrl": "/api/assignments/ASG-1794198308574-37/media/odo-serahterima",
+        "fotoSuhuSerahTerimaUrl": "/api/assignments/ASG-1794198308574-37/media/suhu-serahterima",
+        "fotoBuktiSerahTerimaUrl": "/api/assignments/ASG-1794198308574-37/media/bukti-serahterima",
+        "tandaTanganPenerimaUrl": "/api/assignments/ASG-1794198308574-37/media/ttd-penerima"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:25:08",
       "needsSheetSync": false
@@ -1022,12 +1215,49 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Dc Depok",
       "routeId": "RT-006",
       "destination": "DC TEBET",
       "purpose": "FG",
       "volumeCbm": "4,824 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "10-11-2026;00:45:03",
+      "departureData": {
+        "timestamp": "10-11-2026;00:15:27",
+        "titikKeberangkatan": "Dc Depok",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140829,
+        "suhuAwal": "0.9",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Outbound MTP"
+      },
+      "deliveredData": {
+        "timestamp": "10-11-2026;00:45:03",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140846,
+        "suhuSampai": "-9.0",
+        "bbmSampai": "1/4 Tangki",
+        "kondisiSampai": "Suhu & Segel Utuh - Lengkap",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "10-11-2026;02:08:09",
+        "kmAkhir": 140846,
+        "suhuAkhir": "-9.0",
+        "bbmAkhir": "1/4 Tangki",
+        "penerimaNama": "Aldi",
+        "kondisiAkhir": "Suhu & Segel Utuh - Lengkap",
+        "catatanSerahTerima": "Barang sesuai"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794198510642-38/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794198510642-38/media/suhu-berangkat",
+        "fotoOdometerSerahTerimaUrl": "/api/assignments/ASG-1794198510642-38/media/odo-serahterima",
+        "fotoSuhuSerahTerimaUrl": "/api/assignments/ASG-1794198510642-38/media/suhu-serahterima",
+        "fotoBuktiSerahTerimaUrl": "/api/assignments/ASG-1794198510642-38/media/bukti-serahterima",
+        "tandaTanganPenerimaUrl": "/api/assignments/ASG-1794198510642-38/media/ttd-penerima"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:28:30",
       "needsSheetSync": false
@@ -1046,12 +1276,49 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Dc Tebet",
       "routeId": "RT-008",
       "destination": "DC DURI KEPA",
-      "purpose": "FG",
+      "purpose": "",
       "volumeCbm": "4,788 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "10-11-2026;02:54:21",
+      "departureData": {
+        "timestamp": "10-11-2026;02:19:35",
+        "titikKeberangkatan": "Dc Tebet",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140846,
+        "suhuAwal": "8.9",
+        "bbmAwal": "1/4 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Out MTP"
+      },
+      "deliveredData": {
+        "timestamp": "10-11-2026;02:54:21",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140862,
+        "suhuSampai": "-2.3",
+        "bbmSampai": "1/2 Tangki",
+        "kondisiSampai": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "10-11-2026;05:02:57",
+        "kmAkhir": 140862,
+        "suhuAkhir": "-2.3",
+        "bbmAkhir": "1/2 Tangki",
+        "penerimaNama": "Syafrizal",
+        "kondisiAkhir": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSerahTerima": "Out MTP"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794198657173-39/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794198657173-39/media/suhu-berangkat",
+        "fotoOdometerSerahTerimaUrl": "/api/assignments/ASG-1794198657173-39/media/odo-serahterima",
+        "fotoSuhuSerahTerimaUrl": "/api/assignments/ASG-1794198657173-39/media/suhu-serahterima",
+        "fotoBuktiSerahTerimaUrl": "/api/assignments/ASG-1794198657173-39/media/bukti-serahterima",
+        "tandaTanganPenerimaUrl": "/api/assignments/ASG-1794198657173-39/media/ttd-penerima"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:30:57",
       "needsSheetSync": false
@@ -1070,12 +1337,49 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Dc Durikepa",
       "routeId": "RT-007",
       "destination": "DC PULOGADUNG",
       "purpose": "FG",
       "volumeCbm": "2,196 CBM",
-      "status": "Menunggu Berangkat",
+      "status": "Handover",
+      "deliveredAt": "10-11-2026;05:59:48",
+      "departureData": {
+        "timestamp": "10-11-2026;05:08:49",
+        "titikKeberangkatan": "Dc Durikepa",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140862,
+        "suhuAwal": "19.2",
+        "bbmAwal": "1/4 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Out MTP"
+      },
+      "deliveredData": {
+        "timestamp": "10-11-2026;05:59:48",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140884,
+        "suhuSampai": "3.8",
+        "bbmSampai": "1/4 Tangki",
+        "kondisiSampai": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSampai": ""
+      },
+      "handoverData": {
+        "timestamp": "10-11-2026;07:39:39",
+        "kmAkhir": 140884,
+        "suhuAkhir": "3.8",
+        "bbmAkhir": "1/4 Tangki",
+        "penerimaNama": "Faisal",
+        "kondisiAkhir": "Diterima Baik Sesuai Surat Jalan Fisik",
+        "catatanSerahTerima": "Barang sesuai"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794198848833-40/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794198848833-40/media/suhu-berangkat",
+        "fotoOdometerSerahTerimaUrl": "/api/assignments/ASG-1794198848833-40/media/odo-serahterima",
+        "fotoSuhuSerahTerimaUrl": "/api/assignments/ASG-1794198848833-40/media/suhu-serahterima",
+        "fotoBuktiSerahTerimaUrl": "/api/assignments/ASG-1794198848833-40/media/bukti-serahterima",
+        "tandaTanganPenerimaUrl": "/api/assignments/ASG-1794198848833-40/media/ttd-penerima"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:34:08",
       "needsSheetSync": false
@@ -1094,13 +1398,301 @@
       "plateNumber": "F 9088 FI",
       "vehicleType": "Mitshubisi CDD BOX FREEZER",
       "originId": "",
-      "origin": "Menunggu Titik Keberangkatan Driver",
+      "origin": "Dc Pulo",
       "routeId": "RT-009",
       "destination": "DC BEKASI",
       "purpose": "FG",
-      "status": "Menunggu Berangkat",
+      "volumeCbm": "3,168 CBM",
+      "status": "Delivered",
+      "deliveredAt": "10-11-2026;08:19:03",
+      "departureData": {
+        "timestamp": "10-11-2026;07:47:12",
+        "titikKeberangkatan": "Dc Pulo",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 140885,
+        "suhuAwal": "21",
+        "bbmAwal": "1/4 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Out mtp"
+      },
+      "deliveredData": {
+        "timestamp": "10-11-2026;08:19:03",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmSampai": 140898,
+        "suhuSampai": "10",
+        "bbmSampai": "1/4 Tangki",
+        "kondisiSampai": "Suhu & Segel Utuh - Lengkap",
+        "catatanSampai": "Out mtp"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794198970083-41/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794198970083-41/media/suhu-berangkat",
+        "fotoOdometerSerahTerimaUrl": "/api/assignments/ASG-1794198970083-41/media/odo-serahterima",
+        "fotoSuhuSerahTerimaUrl": "/api/assignments/ASG-1794198970083-41/media/suhu-serahterima"
+      },
       "notes": "",
       "createdAt": "09-11-2026;11:36:10",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794231950402-42",
+      "sequenceNumber": 42,
+      "noPenugasan": "ST-CRK/2026/09/0042",
+      "noSuratJalanFisik": "WH/INT/, WHC/INT/",
+      "kodeSegel": "CRK.BDO.40195.",
+      "tanggalTugas": "09-11-2026;20:45:50",
+      "driverId": "DRV-003",
+      "driverName": "MUDI YANTO",
+      "driverPhone": "",
+      "vehicleId": "UNT-003",
+      "plateNumber": "D 8247 FW",
+      "vehicleType": "Suzuki Carry Box Tanduk",
+      "originId": "",
+      "origin": "WH PASIR IMPUN",
+      "routeId": "RT-002",
+      "destination": "DC SUKAMENAK",
+      "purpose": "FG & RM PM",
+      "volumeCbm": "1,932 CBM",
+      "status": "Dalam Perjalanan",
+      "departureData": {
+        "timestamp": "10-11-2026;06:47:06",
+        "titikKeberangkatan": "WH PASIR IMPUN",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 121892,
+        "suhuAwal": "-",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Catatan Teknis Ringan",
+        "catatanBerangkat": "Segel"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794231950402-42/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794231950402-42/media/suhu-berangkat"
+      },
+      "notes": "",
+      "createdAt": "09-11-2026;20:45:50",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794232199934-43",
+      "sequenceNumber": 43,
+      "noPenugasan": "ST-CRK/2026/09/0043",
+      "noSuratJalanFisik": "WH/INT/, WHC/INT/",
+      "kodeSegel": "CRK.BDO.40195.",
+      "tanggalTugas": "09-11-2026;20:49:59",
+      "driverId": "DRV-003",
+      "driverName": "MUDI YANTO",
+      "driverPhone": "",
+      "vehicleId": "UNT-003",
+      "plateNumber": "D 8247 FW",
+      "vehicleType": "Suzuki Carry Box Tanduk",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-003",
+      "destination": "DC SARIWANGI",
+      "purpose": "FG & RMNPM",
+      "volumeCbm": "2,268 CBM",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;20:49:59",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794232551986-44",
+      "sequenceNumber": 44,
+      "noPenugasan": "ST-CRK/2026/09/0044",
+      "noSuratJalanFisik": "WH/INT/",
+      "kodeSegel": "CRK.BDO.40195.",
+      "tanggalTugas": "09-11-2026;20:55:51",
+      "driverId": "DRV-009",
+      "driverName": "DANI EKA RAMADHAN",
+      "driverPhone": "",
+      "vehicleId": "UNT-002",
+      "plateNumber": "F 9432 FH",
+      "vehicleType": "HINO CDD BOX FREEZER",
+      "originId": "",
+      "origin": "Pasir impun",
+      "routeId": "RT-013",
+      "destination": "MTP NAROGONG",
+      "purpose": "FG ( Target Suhu -5°C )",
+      "volumeCbm": "5,436 CBM",
+      "status": "Dalam Perjalanan",
+      "departureData": {
+        "timestamp": "10-11-2026;06:24:52",
+        "titikKeberangkatan": "Pasir impun",
+        "jenisKendaraan": "Mobil Pendingin",
+        "kmAwal": 294836,
+        "suhuAwal": "-7.0",
+        "bbmAwal": "1/2 Tangki",
+        "kondisiKendaraan": "Thermo Pendingin Normal",
+        "catatanBerangkat": "Segel utuh"
+      },
+      "driveMedia": {
+        "fotoOdometerBerangkatUrl": "/api/assignments/ASG-1794232551986-44/media/odo-berangkat",
+        "fotoSuhuBerangkatUrl": "/api/assignments/ASG-1794232551986-44/media/suhu-berangkat"
+      },
+      "notes": "INBOUND MTP ( Jangan Lupa Berpakaian Rapi dan Pakai Sepetu )",
+      "createdAt": "09-11-2026;20:55:51",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794234587947-45",
+      "sequenceNumber": 45,
+      "noPenugasan": "ST-CRK/2026/09/0045",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:29:47",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-018",
+      "destination": "KIOS LEGOSO RAYA",
+      "purpose": "NPL",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:29:47",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794234670711-46",
+      "sequenceNumber": 46,
+      "noPenugasan": "ST-CRK/2026/09/0046",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:31:10",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-019",
+      "destination": "KIOS SURYA KENCANA",
+      "purpose": "",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:35:25",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794234744491-47",
+      "sequenceNumber": 47,
+      "noPenugasan": "ST-CRK/2026/09/0047",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:32:24",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-020",
+      "destination": "KIOS CIREUNDEU",
+      "purpose": "",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:32:24",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794235681662-52",
+      "sequenceNumber": 52,
+      "noPenugasan": "ST-CRK/2026/09/0052",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:48:01",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-019",
+      "destination": "KIOS SURYA KENCANA",
+      "purpose": "NPL",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:48:01",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794235749349-53",
+      "sequenceNumber": 53,
+      "noPenugasan": "ST-CRK/2026/09/0053",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:49:09",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-021",
+      "destination": "KIOS JOMBANG RAYA",
+      "purpose": "NPL",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:49:09",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794235862162-54",
+      "sequenceNumber": 54,
+      "noPenugasan": "ST-CRK/2026/09/0054",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:51:02",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-022",
+      "destination": "KIOS CEGER RAYA",
+      "purpose": "NPL",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:51:02",
+      "needsSheetSync": false
+    },
+    {
+      "id": "ASG-1794235925347-55",
+      "sequenceNumber": 55,
+      "noPenugasan": "ST-CRK/2026/09/0055",
+      "noSuratJalanFisik": "DC/INT/",
+      "kodeSegel": "SEAL NUMBER - DC JAKBAR",
+      "tanggalTugas": "09-11-2026;21:52:05",
+      "driverId": "DRV-008",
+      "driverName": "NANANG KOSIM",
+      "driverPhone": "",
+      "vehicleId": "UNT-005",
+      "plateNumber": "F 9433 FH",
+      "vehicleType": "HINI CDE Box Freezer",
+      "originId": "",
+      "origin": "Menunggu Titik Keberangkatan Driver",
+      "routeId": "RT-023",
+      "destination": "KIOS SERPONG CISAUK",
+      "purpose": "NPL",
+      "status": "Menunggu Berangkat",
+      "notes": "",
+      "createdAt": "09-11-2026;21:52:05",
       "needsSheetSync": false
     }
   ],
@@ -1141,6 +1733,24 @@
       "fotoStrukTolUrl": "https://drive.google.com/file/d/1HRVrDUgd9Z8xud_7BO7-pEoiK_8bTFFa/view?usp=drivesdk",
       "totalPengeluaran": 496276,
       "catatan": "Spbu km 125 B",
+      "needsSheetSync": false
+    },
+    {
+      "id": "EXP-1794241219681-7QA4",
+      "timestamp": "09-11-2026;23:20:23",
+      "tanggal": "09-11-2026;23:20:23",
+      "tanggalPengiriman": "09-11-2026;07:00:00",
+      "tujuanPengiriman": "ASTRO, Cari lampu untuk mobil F 9088 FI",
+      "driverId": "DRV-007",
+      "driverName": "ROBI PRIANTO",
+      "plateNumber": "B 9436 SCP",
+      "completedAssignmentNos": "ST-CRK/2026/09/0033",
+      "fleetCardId": "FC-011",
+      "fleetCardNumber": "0145-0084-0217-5581",
+      "totalPengirimanBbm": 350000,
+      "totalPengeluaranTol": 219000,
+      "totalPengeluaran": 569000,
+      "catatan": "Rest area km 62 & rest area km 88",
       "needsSheetSync": false
     }
   ],

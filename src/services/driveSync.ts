@@ -72,6 +72,12 @@ function createDriveError(message: string, status?: number): DriveHttpError {
   return err;
 }
 
+export function isDriveUrl(val?: string | null): boolean {
+  if (!val) return false;
+  const trimmed = String(val).trim();
+  return /drive\.google\.com|googleusercontent\.com/i.test(trimmed);
+}
+
 function isHttpUrl(val?: string): boolean {
   if (!val) return false;
   const trimmed = val.trim();
@@ -81,6 +87,52 @@ function isHttpUrl(val?: string): boolean {
 function isDataUriImage(val?: string): boolean {
   if (!val) return false;
   return /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(val.trim());
+}
+
+async function resolveSlotImageAsDataUri(
+  category: 'assignments' | 'expenses',
+  entityId: string,
+  slotApi: string,
+  raw?: string,
+  existingUrl?: string
+): Promise<string> {
+  if (isDataUriImage(raw)) return raw!.trim();
+  if (isDataUriImage(existingUrl)) return existingUrl!.trim();
+
+  const candidates: string[] = [];
+  if (existingUrl && (existingUrl.startsWith('/') || existingUrl.startsWith('http'))) {
+    candidates.push(existingUrl);
+  }
+  if (raw && (raw.startsWith('/') || raw.startsWith('http'))) {
+    candidates.push(raw);
+  }
+  candidates.push(
+    category === 'assignments'
+      ? `/api/assignments/${encodeURIComponent(entityId)}/media/${slotApi}`
+      : `/api/driver-expenses/${encodeURIComponent(entityId)}/media/${slotApi}`
+  );
+
+  for (const url of candidates) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        if (blob.size > 50) {
+          return await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              resolve(typeof reader.result === 'string' ? reader.result : '');
+            };
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  return '';
 }
 
 export function countAssignmentPhotos(
@@ -141,11 +193,10 @@ export function countAssignmentPhotos(
       handoverPhotos += 1;
     }
 
-    const synced =
-      isHttpUrl(s.driveUrl) || (isHttpUrl(s.raw) && s.raw!.includes('drive.google.com'));
-    if (synced) {
+    const isDrive = isDriveUrl(s.driveUrl) || isDriveUrl(s.raw);
+    if (isDrive) {
       syncedToDrive += 1;
-    } else if (isDataUriImage(s.raw)) {
+    } else {
       pendingDriveUpload += 1;
     }
   }
@@ -433,50 +484,62 @@ export async function syncAllAssignmentsPhotosToDrive(
     const slotDefs: Array<{
       key: keyof Omit<DriveMediaLinks, 'folderId' | 'folderUrl' | 'syncedAt'>;
       filePrefix: string;
+      slotApi: string;
       raw?: string;
       existingUrl?: string;
     }> = [
       {
         key: 'fotoOdometerBerangkatUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_01_Odometer_Keberangkatan`,
+        slotApi: 'odo-berangkat',
         raw: dep?.fotoOdometerBerangkat,
         existingUrl: existingDm.fotoOdometerBerangkatUrl,
       },
       {
         key: 'fotoSuhuBerangkatUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_02_Suhu_Keberangkatan`,
+        slotApi: 'suhu-berangkat',
         raw: dep?.fotoSuhuBerangkat,
         existingUrl: existingDm.fotoSuhuBerangkatUrl,
       },
       {
         key: 'fotoOdometerSerahTerimaUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_03_Odometer_Sampai`,
+        slotApi: 'odo-serahterima',
         raw: ho?.fotoOdometerSerahTerima || deliv?.fotoOdometerSampai,
         existingUrl: existingDm.fotoOdometerSerahTerimaUrl,
       },
       {
         key: 'fotoSuhuSerahTerimaUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_04_Suhu_Sampai`,
+        slotApi: 'suhu-serahterima',
         raw: ho?.fotoSuhuSerahTerima || deliv?.fotoSuhuSampai,
         existingUrl: existingDm.fotoSuhuSerahTerimaUrl,
       },
       {
         key: 'fotoBuktiSerahTerimaUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_05_Bukti_SerahTerima`,
+        slotApi: 'bukti-serahterima',
         raw: ho?.fotoBuktiSerahTerima,
         existingUrl: existingDm.fotoBuktiSerahTerimaUrl,
       },
       {
         key: 'tandaTanganPenerimaUrl',
         filePrefix: `${asg.noPenugasan || asg.id}_06_TandaTangan_Penerima`,
+        slotApi: 'ttd-penerima',
         raw: ho?.tandaTanganPenerima,
         existingUrl: existingDm.tandaTanganPenerimaUrl,
       },
     ];
 
-    const toUpload = slotDefs.filter(
-      (s) => isDataUriImage(s.raw) && (overwrite || !isHttpUrl(s.existingUrl))
-    );
+    const toUpload = slotDefs.filter((s) => {
+      const hasPhoto = Boolean(
+        (s.raw && s.raw.trim()) || (s.existingUrl && s.existingUrl.trim())
+      );
+      if (!hasPhoto) return false;
+      const alreadyOnDrive = isDriveUrl(s.existingUrl) || isDriveUrl(s.raw);
+      return overwrite || !alreadyOnDrive;
+    });
 
     if (toUpload.length === 0) continue;
 
@@ -515,12 +578,20 @@ export async function syncAllAssignmentsPhotosToDrive(
 
     let uploadedForAsg = 0;
     for (const slot of toUpload) {
-      if (!slot.raw) continue;
+      const resolvedDataUri = await resolveSlotImageAsDataUri(
+        'assignments',
+        asg.id,
+        slot.slotApi,
+        slot.raw,
+        slot.existingUrl
+      );
+      if (!resolvedDataUri) continue;
+
       const fileUrl = await uploadDataUriToDriveFolder(
         accessToken,
         asgFolder.id,
         slot.filePrefix.replace(/[\\/:*?"<>|]+/g, '-'),
-        slot.raw
+        resolvedDataUri
       );
       if (fileUrl) {
         mediaUrls[slot.key] = fileUrl;
@@ -599,11 +670,11 @@ export async function syncDriverExpensesPhotosToDrive(
 
   for (const exp of driverExpenses) {
     const needBbm =
-      isDataUriImage(exp.fotoStrukBbm) &&
-      (overwrite || !isHttpUrl(exp.fotoStrukBbmUrl));
+      Boolean(exp.fotoStrukBbm || exp.fotoStrukBbmUrl) &&
+      (overwrite || (!isDriveUrl(exp.fotoStrukBbmUrl) && !isDriveUrl(exp.fotoStrukBbm)));
     const needTol =
-      isDataUriImage(exp.fotoStrukTol) &&
-      (overwrite || !isHttpUrl(exp.fotoStrukTolUrl));
+      Boolean(exp.fotoStrukTol || exp.fotoStrukTolUrl) &&
+      (overwrite || (!isDriveUrl(exp.fotoStrukTolUrl) && !isDriveUrl(exp.fotoStrukTol)));
 
     if (!needBbm && !needTol) continue;
 
@@ -637,37 +708,55 @@ export async function syncDriverExpensesPhotosToDrive(
     let fotoStrukTolUrl = exp.fotoStrukTolUrl;
     let uploadedCount = 0;
 
-    if (needBbm && exp.fotoStrukBbm) {
-      const url = await uploadDataUriToDriveFolder(
-        accessToken,
-        monthFolder.id,
-        `${safeDate}_${safeDriver}_${safeCard}_${exp.id}_Struk_BBM`.replace(
-          /[\\/:*?"<>|]+/g,
-          '-'
-        ),
-        exp.fotoStrukBbm
+    if (needBbm) {
+      const dataUri = await resolveSlotImageAsDataUri(
+        'expenses',
+        exp.id,
+        'struk-bbm',
+        exp.fotoStrukBbm,
+        exp.fotoStrukBbmUrl
       );
-      if (url) {
-        fotoStrukBbmUrl = url;
-        uploadedCount += 1;
-        totalUploadedFiles += 1;
+      if (dataUri) {
+        const url = await uploadDataUriToDriveFolder(
+          accessToken,
+          monthFolder.id,
+          `${safeDate}_${safeDriver}_${safeCard}_${exp.id}_Struk_BBM`.replace(
+            /[\\/:*?"<>|]+/g,
+            '-'
+          ),
+          dataUri
+        );
+        if (url) {
+          fotoStrukBbmUrl = url;
+          uploadedCount += 1;
+          totalUploadedFiles += 1;
+        }
       }
     }
 
-    if (needTol && exp.fotoStrukTol) {
-      const url = await uploadDataUriToDriveFolder(
-        accessToken,
-        monthFolder.id,
-        `${safeDate}_${safeDriver}_${safeCard}_${exp.id}_Struk_Tol`.replace(
-          /[\\/:*?"<>|]+/g,
-          '-'
-        ),
-        exp.fotoStrukTol
+    if (needTol) {
+      const dataUri = await resolveSlotImageAsDataUri(
+        'expenses',
+        exp.id,
+        'struk-tol',
+        exp.fotoStrukTol,
+        exp.fotoStrukTolUrl
       );
-      if (url) {
-        fotoStrukTolUrl = url;
-        uploadedCount += 1;
-        totalUploadedFiles += 1;
+      if (dataUri) {
+        const url = await uploadDataUriToDriveFolder(
+          accessToken,
+          monthFolder.id,
+          `${safeDate}_${safeDriver}_${safeCard}_${exp.id}_Struk_Tol`.replace(
+            /[\\/:*?"<>|]+/g,
+            '-'
+          ),
+          dataUri
+        );
+        if (url) {
+          fotoStrukTolUrl = url;
+          uploadedCount += 1;
+          totalUploadedFiles += 1;
+        }
       }
     }
 

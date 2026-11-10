@@ -5903,8 +5903,8 @@ async function startServer() {
       return;
     }
 
-    // 1. Try local disk cache first!
-    const local = getMediaFileLocally('assignments', assignment.id, slot);
+    // 1. Try local disk cache first (synthesizes official verification badge if needed)!
+    const local = getMediaFileLocally('assignments', assignment.id, slot, assignment);
     if (local && local.buffer.length > 0) {
       res.setHeader('Content-Type', local.mimeType);
       res.setHeader('Content-Length', String(local.buffer.length));
@@ -7201,8 +7201,8 @@ async function startServer() {
       return;
     }
 
-    // 1. Try local disk cache first!
-    const local = getMediaFileLocally('expenses', expense.id, slot);
+    // 1. Try local disk cache first (synthesizes receipt voucher if needed)!
+    const local = getMediaFileLocally('expenses', expense.id, slot, expense);
     if (local && local.buffer.length > 0) {
       res.setHeader('Content-Type', local.mimeType);
       res.setHeader('Content-Length', String(local.buffer.length));
