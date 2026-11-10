@@ -8,8 +8,29 @@
   "liveCsvReadable": true,
   "driveRootFolderId": "1KxUKh-Lu-CebrkUmP-VP69-kPXFMJql-",
   "driveRootFolderUrl": "https://drive.google.com/drive/folders/1KxUKh-Lu-CebrkUmP-VP69-kPXFMJql-",
-  "lastSyncedAt": "2026-11-10T07:35:07.286Z",
+  "lastSyncedAt": "2026-11-10T09:01:37.638Z",
   "lastSyncedSpreadsheetId": "1CDskFRovW_ZH6xwipwqn3A6fga1ZMylJzL4MrhaB2Ac",
+  "wasIntentionallyCleared": true,
+  "drivers": [],
+  "vehicles": [],
+  "routes": [],
+  "fleetCards": [],
+  "adminViews": [
+    {
+      "id": "AV-001",
+      "name": "Viewer Operasional Logistik",
+      "pin": "123456",
+      "active": true,
+      "description": "Akses Pantau Dashboard Logistik Saja (Read-Only)",
+      "createdAt": "2026-11-10T09:01:37.638Z",
+      "updatedAt": "2026-11-10T09:01:37.638Z"
+    }
+  ],
+  "assignments": [],
+  "driverExpenses": [],
+  "notifications": [],
+  "lastSequence": 0,
+  "needsMasterSheetSync": false,
   "syncedDriverIds": [],
   "syncedVehicleIds": [],
   "syncedRouteIds": [],
@@ -30,32 +51,5 @@
     "routes": [],
     "fleetCards": [],
     "driverExpenses": []
-  },
-  "dispatcherWaPhone": "085780777715",
-  "whatsappTargetMode": "GROUP",
-  "whatsappGroupName": "Tim Pengiriman Cimol Balap",
-  "whatsappGroupInviteUrl": "https://chat.whatsapp.com/KAZTVJP9ET50OBTg9gNIy4?s=cl&p=a&mlu=4&ilr=4",
-  "publicPortalBaseUrl": "",
-  "letterPrefix": "ST-CRK",
-  "lastSequence": 0,
-  "needsMasterSheetSync": false,
-  "drivers": [],
-  "vehicles": [],
-  "routes": [],
-  "fleetCards": [],
-  "adminViews": [
-    {
-      "id": "AV-001",
-      "name": "Viewer Operasional Logistik",
-      "pin": "123456",
-      "active": true,
-      "description": "Akses Pantau Dashboard Logistik Saja (Read-Only)",
-      "createdAt": "2026-11-07T09:36:53.679Z",
-      "updatedAt": "2026-11-07T09:36:53.679Z"
-    }
-  ],
-  "assignments": [],
-  "driverExpenses": [],
-  "notifications": [],
-  "appsScriptBridgeStatus": "ACTIVE"
+  }
 }

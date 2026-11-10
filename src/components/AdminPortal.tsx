@@ -4,6 +4,7 @@ import {
   Award,
   Box,
   Calculator,
+  Calendar,
   CheckCircle2,
   ClipboardList,
   Clock,
@@ -108,6 +109,41 @@ import {
   FleetStatusHistoryModal,
 } from './FleetStatusHistoryModal';
 import { GoogleSignInButton } from './GoogleSignInButton';
+
+function toDatetimeLocalInput(rawStr?: string | Date | null): string {
+  if (!rawStr) {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+  if (rawStr instanceof Date) {
+    if (isNaN(rawStr.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${rawStr.getFullYear()}-${pad(rawStr.getMonth() + 1)}-${pad(rawStr.getDate())}T${pad(rawStr.getHours())}:${pad(rawStr.getMinutes())}`;
+  }
+  const str = String(rawStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
+    return str.slice(0, 16);
+  }
+  const matchDdMmYyyy = str.match(/^(\d{2})-(\d{2})-(\d{4});(\d{2}):(\d{2})/);
+  if (matchDdMmYyyy) {
+    const [, day, month, year, hour, min] = matchDdMmYyyy;
+    return `${year}-${month}-${day}T${hour}:${min}`;
+  }
+  const matchYyyyMmDd = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchYyyyMmDd) {
+    const [, year, month, day] = matchYyyyMmDd;
+    return `${year}-${month}-${day}T08:00`;
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
 import { PrintableAssignmentModal } from './PrintableAssignmentModal';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
@@ -1030,7 +1066,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   }, [assignments, searchQuery, statusFilter]);
 
   const openCreateAssignmentModal = () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const nowLocal = toDatetimeLocalInput(new Date());
     setEditingAssignment(null);
     setCreateWaMode(config.whatsappTargetMode || 'GROUP');
     setSuratJalanList(['']);
@@ -1041,7 +1077,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setBoxKoliCount('1');
     setBoxUnit('cm');
     setAsgForm({
-      tanggalTugas: today,
+      tanggalTugas: nowLocal,
       jadwalJamTiba: '',
       slaDurationMinutes: DEFAULT_SLA_DURATION_MINUTES,
       noSuratJalanFisik: '',
@@ -1066,7 +1102,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       penerimaNama: '',
       notes: '',
     });
-    fetchNextSequentialPreview(today);
+    fetchNextSequentialPreview(nowLocal.slice(0, 10));
     setAssignmentModalOpen(true);
   };
 
@@ -1080,7 +1116,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     setBoxHeightCm('');
     setBoxKoliCount('1');
     setAsgForm({
-      tanggalTugas: asg.tanggalTugas,
+      tanggalTugas: toDatetimeLocalInput(asg.tanggalTugas),
       jadwalJamTiba: asg.jadwalJamTiba || '',
       slaDurationMinutes:
         typeof asg.slaDurationMinutes === 'number' && asg.slaDurationMinutes > 0
@@ -7352,13 +7388,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   // Requirement #3: 1-Click Terbitkan Surat Tugas -> directly save & open WhatsApp
                   setCreatingSubmitting(true);
                   try {
-                    const clickTime = new Date();
-                    const lockedTimeStr = formatDatabaseTimestamp(clickTime);
+                    const submittedTimeStr = asgForm.tanggalTugas
+                      ? formatDatabaseTimestamp(asgForm.tanggalTugas)
+                      : formatDatabaseTimestamp(new Date());
                     const notif = await onCreateAssignment(
                       {
                         ...payloadForm,
-                        tanggalTugas: lockedTimeStr,
-                        createdAt: lockedTimeStr,
+                        tanggalTugas: submittedTimeStr,
+                        createdAt: submittedTimeStr,
                       },
                       createWaMode
                     );
@@ -7375,38 +7412,37 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                      <Lock className="h-3.5 w-3.5 text-emerald-700" />
-                      <span>Tanggal &amp; Waktu Terbit *</span>
+                      <Calendar className="h-3.5 w-3.5 text-slate-700" />
+                      <span>Tanggal &amp; Waktu Tugas *</span>
                     </label>
-                    {editingAssignment ? (
+                    <div className="mt-1.5 flex items-center gap-2">
                       <input
-                        type="text"
+                        type="datetime-local"
                         required
-                        value={asgForm.tanggalTugas}
+                        value={toDatetimeLocalInput(asgForm.tanggalTugas)}
                         onChange={(e) => {
                           const val = e.target.value;
                           setAsgForm((p) => ({ ...p, tanggalTugas: val }));
+                          if (val) fetchNextSequentialPreview(val.slice(0, 10));
                         }}
-                        className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 tabular-nums focus:border-slate-900 focus:outline-none"
                       />
-                    ) : (
-                      <div className="mt-1.5 flex min-h-[42px] items-center justify-between rounded-lg border border-emerald-300 bg-emerald-50/70 px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
-                          <span className="font-mono text-xs font-bold text-slate-900 tabular-nums">
-                            {formatRealTimeTimestamp(liveNow)}
-                          </span>
-                        </div>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800">
-                          <Lock className="h-3 w-3" />
-                          Terkunci Real-Time
-                        </span>
-                      </div>
-                    )}
+                      <button
+                        type="button"
+                        title="Set Ke Jam & Tanggal Sekarang"
+                        onClick={() => {
+                          const nowVal = toDatetimeLocalInput(new Date());
+                          setAsgForm((p) => ({ ...p, tanggalTugas: nowVal }));
+                          fetchNextSequentialPreview(nowVal.slice(0, 10));
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none"
+                      >
+                        <Clock className="h-3.5 w-3.5 text-slate-600" />
+                        <span>Sekarang</span>
+                      </button>
+                    </div>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      {editingAssignment
-                        ? 'Waktu penerbitan Surat Tugas.'
-                        : 'Tanggal & waktu dikunci otomatis saat tombol "Terbitkan Surat Tugas" diklik.'}
+                      Diisi manual oleh Admin Dispatcher (dapat disesuaikan sesuai tanggal tugas yang diinginkan).
                     </p>
                   </div>
 

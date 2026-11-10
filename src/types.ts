@@ -267,6 +267,7 @@ export interface AppConfig {
   isDefaultPin: boolean;
   adminPin?: string;
   whatsappGatewayConfigured: boolean;
+  wasIntentionallyCleared?: boolean;
 }
 
 export interface AppStateResponse {

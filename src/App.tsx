@@ -372,6 +372,12 @@ export default function App() {
         localBackup?.config?.lastSyncedAt ?? boundSheet?.lastSyncedAt ?? null,
     };
     if (!localBackup && !boundSheet) return INITIAL_STATE;
+    if (
+      localBackup?.config?.wasIntentionallyCleared ||
+      (localBackup?.assignments?.length === 0 && localBackup?.drivers?.length === 0)
+    ) {
+      return INITIAL_STATE;
+    }
     return {
       ...INITIAL_STATE,
       drivers: localBackup?.drivers || [],
@@ -930,6 +936,13 @@ export default function App() {
         }
         let data = res.data;
 
+        if (
+          data.config?.wasIntentionallyCleared ||
+          (data.assignments.length === 0 && data.drivers.length === 0)
+        ) {
+          void resetAllApplicationClientStorage();
+        }
+
         // Permanent Admin PIN restoration if container restarted with default PIN
         const savedCustomPin = getSavedCustomPin();
         if (data.config?.isDefaultPin && savedCustomPin) {
@@ -1069,6 +1082,7 @@ export default function App() {
         // 3. Cold-boot emergency data restoration ONLY when server is a genuinely uninitialized blank container
         // NEVER restore from vault if lastSyncedAt or lastSequence > 0 exists (prevents resurrecting rows deleted in Spreadsheet!)
         const isTrueBrandNewColdBoot =
+          !data.config?.wasIntentionallyCleared &&
           data.drivers.length === 0 &&
           data.vehicles.length === 0 &&
           data.routes.length === 0 &&

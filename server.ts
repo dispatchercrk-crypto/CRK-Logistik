@@ -17,6 +17,7 @@ import {
   saveMediaFileLocally,
   saveRawBufferLocally,
   getMediaFileLocally,
+  extractAndSaveAllAssignmentPhotosLocally,
   extractGoogleDriveFileId,
   buildDirectGoogleDriveImageCandidates,
   fetchRemoteDriveImageBuffer,
@@ -298,6 +299,7 @@ interface PersistentStore {
   letterPrefix: string;
   lastSequence: number;
   needsMasterSheetSync?: boolean;
+  wasIntentionallyCleared?: boolean;
   drivers: DriverRecord[];
   vehicles: VehicleRecord[];
   routes: RouteRecord[];
@@ -619,6 +621,16 @@ let onStoreSavedHook: (() => void) | null = null;
 
 function saveStore(storeObj: PersistentStore, skipRelayPush = false): void {
   try {
+    const hasAnyRealData =
+      (storeObj.drivers?.length || 0) > 0 ||
+      (storeObj.vehicles?.length || 0) > 0 ||
+      (storeObj.routes?.length || 0) > 0 ||
+      (storeObj.fleetCards?.length || 0) > 0 ||
+      (storeObj.assignments?.length || 0) > 0 ||
+      (storeObj.driverExpenses?.length || 0) > 0;
+    if (hasAnyRealData) {
+      storeObj.wasIntentionallyCleared = false;
+    }
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -692,10 +704,76 @@ function removeDeletedTombstones(
   tb[kind] = tb[kind].filter((item) => !toRemove.has(normalizeSyncKey(item)));
 }
 
+function isDummySeedRecord(
+  kind: keyof DeletedTombstonesStore,
+  ...keys: Array<string | undefined | null>
+): boolean {
+  if (!store?.wasIntentionallyCleared) return false;
+  return keys.some((k) => {
+    const lower = normalizeSyncKey(k);
+    if (!lower) return false;
+    if (kind === 'assignments') {
+      return (
+        lower.startsWith('asg-seed-') ||
+        lower.includes('/2026/08/') ||
+        lower.includes('/2026/09/') ||
+        lower.includes('st-crk/2026/08/') ||
+        lower.includes('st-crk/2026/09/')
+      );
+    }
+    if (kind === 'drivers') {
+      return [
+        'drv-001',
+        'drv-002',
+        'drv-003',
+        'drv-004',
+        'drv-005',
+        'drv-006',
+        'drv-007',
+        'drv-008',
+        'drv-009',
+        'drv-010',
+      ].includes(lower);
+    }
+    if (kind === 'vehicles') {
+      return [
+        'unt-001',
+        'unt-002',
+        'unt-003',
+        'unt-004',
+        'unt-005',
+        'unt-006',
+      ].includes(lower);
+    }
+    if (kind === 'routes') {
+      return [
+        'rt-001',
+        'rt-002',
+        'rt-003',
+        'rt-004',
+        'rt-005',
+        'rt-006',
+        'rt-007',
+        'rt-008',
+        'rt-009',
+        'rt-010',
+      ].includes(lower);
+    }
+    if (kind === 'fleetCards') {
+      return ['fc-001', 'fc-002', 'fc-003', 'fc-004'].includes(lower);
+    }
+    if (kind === 'driverExpenses') {
+      return lower.startsWith('exp-2026-');
+    }
+    return false;
+  });
+}
+
 function isKeyTombstoned(
   kind: keyof DeletedTombstonesStore,
   ...keys: Array<string | undefined | null>
 ): boolean {
+  if (isDummySeedRecord(kind, ...keys)) return true;
   const tb = ensureStoreTracking();
   if (tb[kind].length === 0) return false;
   const set = new Set(tb[kind].map(normalizeSyncKey));
@@ -1443,6 +1521,15 @@ function buildPublicState() {
           ? `https://drive.google.com/drive/folders/${effectiveDriveRootId}`
           : ''),
       lastSyncedAt: store.lastSyncedAt,
+      wasIntentionallyCleared: Boolean(
+        store.wasIntentionallyCleared &&
+          store.assignments.length === 0 &&
+          store.drivers.length === 0 &&
+          store.vehicles.length === 0 &&
+          store.routes.length === 0 &&
+          (store.fleetCards?.length || 0) === 0 &&
+          (store.driverExpenses?.length || 0) === 0
+      ),
       dispatcherWaPhone: store.dispatcherWaPhone,
       whatsappTargetMode: store.whatsappTargetMode || 'GROUP',
       whatsappGroupName:
@@ -3015,11 +3102,7 @@ async function startServer() {
         for (const sd of drivers) {
           const nk = normalizeSyncKey(sd.id);
           if (!nk) continue;
-          if (
-            store.pendingMasterDeletionPush &&
-            !localById.has(nk) &&
-            isKeyTombstoned('drivers', nk)
-          ) {
+          if (isKeyTombstoned('drivers', nk)) {
             hasPendingMasterUpdates = true;
             continue;
           }
@@ -3065,11 +3148,7 @@ async function startServer() {
         for (const sv of vehicles) {
           const nk = normalizeSyncKey(sv.id);
           if (!nk) continue;
-          if (
-            store.pendingMasterDeletionPush &&
-            !localById.has(nk) &&
-            isKeyTombstoned('vehicles', nk)
-          ) {
+          if (isKeyTombstoned('vehicles', nk)) {
             hasPendingMasterUpdates = true;
             continue;
           }
@@ -3117,11 +3196,7 @@ async function startServer() {
         for (const sr of routes) {
           const nk = normalizeSyncKey(sr.id);
           if (!nk) continue;
-          if (
-            store.pendingMasterDeletionPush &&
-            !localById.has(nk) &&
-            isKeyTombstoned('routes', nk)
-          ) {
+          if (isKeyTombstoned('routes', nk)) {
             hasPendingMasterUpdates = true;
             continue;
           }
@@ -3166,11 +3241,7 @@ async function startServer() {
         for (const sfc of fleetCards) {
           const nk = normalizeSyncKey(sfc.id);
           if (!nk) continue;
-          if (
-            store.pendingMasterDeletionPush &&
-            !localById.has(nk) &&
-            isKeyTombstoned('fleetCards', nk)
-          ) {
+          if (isKeyTombstoned('fleetCards', nk)) {
             hasPendingMasterUpdates = true;
             continue;
           }
@@ -3248,11 +3319,7 @@ async function startServer() {
         for (const sheetItem of assignments) {
           const normNo = normalizeSyncKey(sheetItem.noPenugasan);
           if (!normNo) continue;
-          if (
-            store.pendingAssignmentDeletionPush &&
-            !localByNo.has(normNo) &&
-            isKeyTombstoned('assignments', sheetItem.id, sheetItem.noPenugasan)
-          ) {
+          if (isKeyTombstoned('assignments', sheetItem.id, sheetItem.noPenugasan)) {
             hasPendingDriverUpdates = true;
             continue;
           }
@@ -3420,11 +3487,7 @@ async function startServer() {
         for (const sheetExp of driverExpenses) {
           const normId = normalizeSyncKey(sheetExp.id);
           if (!normId) continue;
-          if (
-            store.pendingExpenseDeletionPush &&
-            !localExpById.has(normId) &&
-            isKeyTombstoned('driverExpenses', sheetExp.id)
-          ) {
+          if (isKeyTombstoned('driverExpenses', sheetExp.id)) {
             hasPendingDriverUpdates = true;
             continue;
           }
@@ -8469,6 +8532,64 @@ async function startServer() {
     );
     saveStore(store);
     triggerServerAppsScriptPushIfConfigured();
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.json({
+      success: true,
+      state: publicState,
+    });
+  });
+
+  // Full System Reset: Clear all master data, assignments, expenses, and Google Sheets rows
+  app.post('/api/system/reset-all', async (req, res) => {
+    store.assignments = [];
+    store.drivers = [];
+    store.vehicles = [];
+    store.routes = [];
+    store.fleetCards = [];
+    store.driverExpenses = [];
+    store.notifications = [];
+    store.syncedAssignmentNos = [];
+    store.syncedDriverIds = [];
+    store.syncedVehicleIds = [];
+    store.syncedRouteIds = [];
+    store.syncedFleetCardIds = [];
+    store.syncedExpenseIds = [];
+    store.lastSequence = 0;
+    store.wasIntentionallyCleared = true;
+    store.needsMasterSheetSync = false;
+    store.deletedTombstones = {
+      assignments: [],
+      drivers: [],
+      vehicles: [],
+      routes: [],
+      fleetCards: [],
+      driverExpenses: [],
+    };
+    saveStore(store);
+
+    if (store.spreadsheetId) {
+      try {
+        await pushAllTabsViaServiceAccount(store.spreadsheetId, {
+          driversRows: [],
+          vehiclesRows: [],
+          routesRows: [],
+          fleetCardsRows: [],
+          driverExpensesRows: [],
+          assignmentsRows: [],
+          configRows: [
+            ['admin_pin', store.adminPin || '044183'],
+            ['letter_prefix', store.letterPrefix || 'ST-CRK'],
+            ['last_sequence', '0'],
+          ],
+        });
+      } catch (e) {}
+    }
 
     const publicState = broadcastRealtime({
       type: 'state:sync',

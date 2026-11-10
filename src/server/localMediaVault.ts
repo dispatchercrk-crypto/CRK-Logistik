@@ -314,107 +314,128 @@ export function getMediaFileLocally(
   if (!cleanId || !cleanSlot) return null;
 
   const dir = path.join(MEDIA_BASE_DIR, category, cleanId);
-  const binPath = path.join(dir, `${cleanSlot}.bin`);
-  const metaPath = path.join(dir, `${cleanSlot}.meta.json`);
 
-  if (fs.existsSync(binPath)) {
-    try {
-      const buffer = fs.readFileSync(binPath);
-      let mimeType = 'image/jpeg';
-      if (fs.existsSync(metaPath)) {
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
-          if (meta?.mimeType) mimeType = meta.mimeType;
-        } catch {
-          // fallback
-        }
-      }
-      return { buffer, mimeType };
-    } catch {
-      // fallback to generator below
-    }
+  const candidateSlots = [cleanSlot];
+  if (cleanSlot === 'foto-odometer-berangkat' || cleanSlot === 'odometer-berangkat') {
+    candidateSlots.push('odo-berangkat');
+  } else if (cleanSlot === 'odo-berangkat') {
+    candidateSlots.push('foto-odometer-berangkat');
+  } else if (cleanSlot === 'foto-suhu-berangkat') {
+    candidateSlots.push('suhu-berangkat');
+  } else if (cleanSlot === 'suhu-berangkat') {
+    candidateSlots.push('foto-suhu-berangkat');
+  } else if (cleanSlot === 'foto-odometer-serahterima' || cleanSlot === 'foto-odometer-sampai' || cleanSlot === 'odo-sampai') {
+    candidateSlots.push('odo-serahterima', 'odo-sampai');
+  } else if (cleanSlot === 'odo-serahterima') {
+    candidateSlots.push('foto-odometer-serahterima', 'foto-odometer-sampai', 'odo-sampai');
+  } else if (cleanSlot === 'foto-suhu-serahterima' || cleanSlot === 'foto-suhu-sampai' || cleanSlot === 'suhu-sampai') {
+    candidateSlots.push('suhu-serahterima', 'suhu-sampai');
+  } else if (cleanSlot === 'suhu-serahterima') {
+    candidateSlots.push('foto-suhu-serahterima', 'foto-suhu-sampai', 'suhu-sampai');
+  } else if (cleanSlot === 'foto-bukti-serahterima') {
+    candidateSlots.push('bukti-serahterima');
+  } else if (cleanSlot === 'bukti-serahterima') {
+    candidateSlots.push('foto-bukti-serahterima');
+  } else if (cleanSlot === 'tanda-tangan-penerima') {
+    candidateSlots.push('ttd-penerima');
+  } else if (cleanSlot === 'ttd-penerima') {
+    candidateSlots.push('tanda-tangan-penerima');
+  } else if (cleanSlot === 'foto-struk-bbm') {
+    candidateSlots.push('struk-bbm', 'bbm');
+  } else if (cleanSlot === 'struk-bbm' || cleanSlot === 'bbm') {
+    candidateSlots.push('foto-struk-bbm');
+  } else if (cleanSlot === 'foto-struk-tol') {
+    candidateSlots.push('struk-tol', 'tol');
+  } else if (cleanSlot === 'struk-tol' || cleanSlot === 'tol') {
+    candidateSlots.push('foto-struk-tol');
   }
 
-  // Synthesize official high-contrast verification badge if metadata is available
-  if (fallbackMeta) {
-    let title = 'BUKTI OPERASIONAL DIGITAL';
-    let metricLabel = 'METRIK';
-    let metricValue = 'TERDATA LENGKAP';
-    let timestamp = fallbackMeta.createdAt || new Date().toISOString();
-    let notes = '';
+  for (const sName of candidateSlots) {
+    const binPath = path.join(dir, `${sName}.bin`);
+    const metaPath = path.join(dir, `${sName}.meta.json`);
 
-    if (cleanSlot.includes('odo') && cleanSlot.includes('berangkat')) {
-      title = '01. FOTO ODOMETER KEBERANGKATAN';
-      metricLabel = 'KM AWAL KEBERANGKATAN';
-      metricValue = fallbackMeta.departureData?.kmAwal ? `${Number(fallbackMeta.departureData.kmAwal).toLocaleString('id-ID')} KM` : 'KM AWAL TERVERIFIKASI';
-      timestamp = fallbackMeta.departureData?.timestamp || timestamp;
-      notes = fallbackMeta.departureData?.catatanBerangkat || '';
-    } else if (cleanSlot.includes('suhu') && cleanSlot.includes('berangkat')) {
-      title = '02. FOTO SUHU KEBERANGKATAN';
-      metricLabel = 'SUHU MONITOR AWAL';
-      metricValue = fallbackMeta.departureData?.suhuAwal ? `${fallbackMeta.departureData.suhuAwal} C` : 'SUHU AWAL NORMAL';
-      timestamp = fallbackMeta.departureData?.timestamp || timestamp;
-    } else if (cleanSlot.includes('odo') && (cleanSlot.includes('serah') || cleanSlot.includes('sampai'))) {
-      title = '03. FOTO ODOMETER SERAH TERIMA';
-      metricLabel = 'KM AKHIR / SAMPAI';
-      const km = fallbackMeta.handoverData?.kmAkhir ?? fallbackMeta.deliveredData?.kmSampai;
-      metricValue = km ? `${Number(km).toLocaleString('id-ID')} KM` : 'KM AKHIR TERVERIFIKASI';
-      timestamp = fallbackMeta.handoverData?.timestamp || fallbackMeta.deliveredData?.timestamp || timestamp;
-    } else if (cleanSlot.includes('suhu') && (cleanSlot.includes('serah') || cleanSlot.includes('sampai'))) {
-      title = '04. FOTO SUHU SERAH TERIMA';
-      metricLabel = 'SUHU MONITOR AKHIR';
-      const s = fallbackMeta.handoverData?.suhuAkhir || fallbackMeta.deliveredData?.suhuSampai;
-      metricValue = s ? `${s} C` : 'SUHU AKHIR TERVERIFIKASI';
-      timestamp = fallbackMeta.handoverData?.timestamp || fallbackMeta.deliveredData?.timestamp || timestamp;
-    } else if (cleanSlot.includes('bukti')) {
-      title = '05. FOTO BUKTI SERAH TERIMA FISIK';
-      metricLabel = 'STATUS PENERIMAAN';
-      metricValue = fallbackMeta.handoverData?.kondisiAkhir || 'DITERIMA BAIK SESUAI SURAT JALAN';
-      timestamp = fallbackMeta.handoverData?.timestamp || timestamp;
-      notes = fallbackMeta.handoverData?.catatanSerahTerima || '';
-    } else if (cleanSlot.includes('ttd') || cleanSlot.includes('tanda')) {
-      title = '06. TANDA TANGAN PENERIMA';
-      metricLabel = 'NAMA PENERIMA';
-      metricValue = fallbackMeta.handoverData?.penerimaNama || 'PENERIMA BARANG';
-      timestamp = fallbackMeta.handoverData?.timestamp || timestamp;
-    } else if (cleanSlot.includes('bbm')) {
-      title = 'STRUK PENGELUARAN BBM (SOLAR / PERTALITE)';
-      metricLabel = 'NOMINAL BBM';
-      metricValue = fallbackMeta.nominalBbm ? `RP ${Number(fallbackMeta.nominalBbm).toLocaleString('id-ID')}` : 'TERDATA LENGKAP';
-      timestamp = fallbackMeta.tanggal || timestamp;
-    } else if (cleanSlot.includes('tol')) {
-      title = 'STRUK PENGELUARAN TOL ELEKTRONIK';
-      metricLabel = 'NOMINAL TOL';
-      metricValue = fallbackMeta.nominalTol ? `RP ${Number(fallbackMeta.nominalTol).toLocaleString('id-ID')}` : 'TERDATA LENGKAP';
-      timestamp = fallbackMeta.tanggal || timestamp;
-    }
-
-    try {
-      const buffer = createSynthesizedMediaBadge({
-        title,
-        category,
-        entityId: cleanId,
-        slot: cleanSlot,
-        noSurat: fallbackMeta.noPenugasan || fallbackMeta.id,
-        driverName: fallbackMeta.driverName,
-        plateNumber: fallbackMeta.plateNumber,
-        vehicleType: fallbackMeta.vehicleType,
-        origin: fallbackMeta.origin,
-        destination: fallbackMeta.destination,
-        metricLabel,
-        metricValue,
-        timestamp,
-        notes,
-      });
-
-      saveRawBufferLocally(category, cleanId, cleanSlot, buffer, 'image/png');
-      return { buffer, mimeType: 'image/png' };
-    } catch (err) {
-      console.error(`[LocalMediaVault] Failed to synthesize badge for ${cleanId}/${cleanSlot}:`, err);
+    if (fs.existsSync(binPath)) {
+      try {
+        const buffer = fs.readFileSync(binPath);
+        let mimeType = 'image/jpeg';
+        if (fs.existsSync(metaPath)) {
+          try {
+            const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+            if (meta?.mimeType) mimeType = meta.mimeType;
+          } catch {
+            // fallback
+          }
+        }
+        return { buffer, mimeType };
+      } catch {
+        // try next candidate
+      }
     }
   }
 
   return null;
+}
+
+export function extractAndSaveAllAssignmentPhotosLocally(
+  category: 'assignments' | 'expenses',
+  entity: Record<string, any>
+): void {
+  if (!entity || !entity.id) return;
+
+  if (category === 'assignments') {
+    const dep = entity.departureData;
+    if (dep?.fotoOdometerBerangkat && typeof dep.fotoOdometerBerangkat === 'string' && dep.fotoOdometerBerangkat.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'odo-berangkat', dep.fotoOdometerBerangkat);
+      saveMediaFileLocally('assignments', entity.id, 'foto-odometer-berangkat', dep.fotoOdometerBerangkat);
+    }
+    if (dep?.fotoSuhuBerangkat && typeof dep.fotoSuhuBerangkat === 'string' && dep.fotoSuhuBerangkat.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'suhu-berangkat', dep.fotoSuhuBerangkat);
+      saveMediaFileLocally('assignments', entity.id, 'foto-suhu-berangkat', dep.fotoSuhuBerangkat);
+    }
+
+    const deliv = entity.deliveredData;
+    if (deliv?.fotoOdometerSampai && typeof deliv.fotoOdometerSampai === 'string' && deliv.fotoOdometerSampai.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'odo-serahterima', deliv.fotoOdometerSampai);
+      saveMediaFileLocally('assignments', entity.id, 'odo-sampai', deliv.fotoOdometerSampai);
+      saveMediaFileLocally('assignments', entity.id, 'foto-odometer-sampai', deliv.fotoOdometerSampai);
+      saveMediaFileLocally('assignments', entity.id, 'foto-odometer-serahterima', deliv.fotoOdometerSampai);
+    }
+    if (deliv?.fotoSuhuSampai && typeof deliv.fotoSuhuSampai === 'string' && deliv.fotoSuhuSampai.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'suhu-serahterima', deliv.fotoSuhuSampai);
+      saveMediaFileLocally('assignments', entity.id, 'suhu-sampai', deliv.fotoSuhuSampai);
+      saveMediaFileLocally('assignments', entity.id, 'foto-suhu-sampai', deliv.fotoSuhuSampai);
+      saveMediaFileLocally('assignments', entity.id, 'foto-suhu-serahterima', deliv.fotoSuhuSampai);
+    }
+
+    const ho = entity.handoverData;
+    if (ho?.fotoOdometerSerahTerima && typeof ho.fotoOdometerSerahTerima === 'string' && ho.fotoOdometerSerahTerima.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'odo-serahterima', ho.fotoOdometerSerahTerima);
+      saveMediaFileLocally('assignments', entity.id, 'odo-sampai', ho.fotoOdometerSerahTerima);
+      saveMediaFileLocally('assignments', entity.id, 'foto-odometer-serahterima', ho.fotoOdometerSerahTerima);
+    }
+    if (ho?.fotoSuhuSerahTerima && typeof ho.fotoSuhuSerahTerima === 'string' && ho.fotoSuhuSerahTerima.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'suhu-serahterima', ho.fotoSuhuSerahTerima);
+      saveMediaFileLocally('assignments', entity.id, 'suhu-sampai', ho.fotoSuhuSerahTerima);
+      saveMediaFileLocally('assignments', entity.id, 'foto-suhu-serahterima', ho.fotoSuhuSerahTerima);
+    }
+    if (ho?.fotoBuktiSerahTerima && typeof ho.fotoBuktiSerahTerima === 'string' && ho.fotoBuktiSerahTerima.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'bukti-serahterima', ho.fotoBuktiSerahTerima);
+      saveMediaFileLocally('assignments', entity.id, 'foto-bukti-serahterima', ho.fotoBuktiSerahTerima);
+    }
+    if (ho?.tandaTanganPenerima && typeof ho.tandaTanganPenerima === 'string' && ho.tandaTanganPenerima.startsWith('data:image/')) {
+      saveMediaFileLocally('assignments', entity.id, 'ttd-penerima', ho.tandaTanganPenerima);
+      saveMediaFileLocally('assignments', entity.id, 'tanda-tangan-penerima', ho.tandaTanganPenerima);
+    }
+  } else if (category === 'expenses') {
+    if (entity.fotoStrukBbm && typeof entity.fotoStrukBbm === 'string' && entity.fotoStrukBbm.startsWith('data:image/')) {
+      saveMediaFileLocally('expenses', entity.id, 'struk-bbm', entity.fotoStrukBbm);
+      saveMediaFileLocally('expenses', entity.id, 'bbm', entity.fotoStrukBbm);
+    }
+    if (entity.fotoStrukTol && typeof entity.fotoStrukTol === 'string' && entity.fotoStrukTol.startsWith('data:image/')) {
+      saveMediaFileLocally('expenses', entity.id, 'struk-tol', entity.fotoStrukTol);
+      saveMediaFileLocally('expenses', entity.id, 'tol', entity.fotoStrukTol);
+    }
+  }
 }
 
 export async function fetchRemoteDriveImageBuffer(

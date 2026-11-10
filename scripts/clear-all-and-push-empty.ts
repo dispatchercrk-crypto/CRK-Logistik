@@ -31,6 +31,8 @@ async function main() {
     store.unsyncedVehicleIds = [];
     store.unsyncedRouteIds = [];
     store.unsyncedFleetCardIds = [];
+    store.wasIntentionallyCleared = true;
+    store.lastSyncedAt = new Date().toISOString();
     store.needsMasterSheetSync = false;
     store.deletedTombstones = {
       assignments: [],
