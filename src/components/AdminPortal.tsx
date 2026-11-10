@@ -650,6 +650,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Master Driver (without No. Polisi Default)
   const [driverModalOpen, setDriverModalOpen] = useState<boolean>(false);
   const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
+  const [driverSaving, setDriverSaving] = useState<boolean>(false);
   const [driverForm, setDriverForm] = useState<DriverMaster>({
     id: '',
     name: '',
@@ -662,6 +663,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Master Armada (without Odometer KM Terakhir)
   const [vehicleModalOpen, setVehicleModalOpen] = useState<boolean>(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [vehicleSaving, setVehicleSaving] = useState<boolean>(false);
   const [vehicleForm, setVehicleForm] = useState<VehicleMaster>({
     id: '',
     plateNumber: '',
@@ -674,6 +676,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Master Rute / Tujuan (without Lokasi Asal & Estimasi Jarak)
   const [routeModalOpen, setRouteModalOpen] = useState<boolean>(false);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
+  const [routeSaving, setRouteSaving] = useState<boolean>(false);
   const [routeForm, setRouteForm] = useState<RouteMaster>({
     id: '',
     destination: '',
@@ -8346,30 +8349,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  triggerConfirm({
-                    open: true,
-                    title: editingDriverId
-                      ? 'Simpan Perubahan Master Driver?'
-                      : 'Tambah Master Driver ke Database?',
-                    description:
-                      'Data Driver akan disimpan dan langsung disinkronkan ke lembar Master_Driver di Google Spreadsheets.',
-                    details: [
-                      `ID Driver : ${driverForm.id.trim().toUpperCase()}`,
-                      `Nama      : ${driverForm.name.trim()}`,
-                    ],
-                    confirmLabel: 'Simpan Data Driver',
-                    variant: 'primary',
-                    action: async () => {
-                      const ok = await onSaveDriver(
-                        editingDriverId ? 'edit' : 'create',
-                        editingDriverId || '',
-                        driverForm
-                      );
-                      if (ok) setDriverModalOpen(false);
-                    },
-                  });
+                  if (!driverForm.id.trim() || !driverForm.name.trim()) return;
+                  setDriverSaving(true);
+                  try {
+                    const ok = await onSaveDriver(
+                      editingDriverId ? 'edit' : 'create',
+                      editingDriverId || '',
+                      driverForm
+                    );
+                    if (ok) setDriverModalOpen(false);
+                  } finally {
+                    setDriverSaving(false);
+                  }
                 }}
                 className="mt-4 space-y-4"
               >
@@ -8479,15 +8472,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setDriverModalOpen(false)}
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                    disabled={driverSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                    disabled={driverSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                   >
-                    Simpan Driver
+                    {driverSaving ? 'Menyimpan...' : 'Simpan Driver'}
                   </button>
                 </div>
               </form>
@@ -8518,30 +8513,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  triggerConfirm({
-                    open: true,
-                    title: editingVehicleId
-                      ? 'Simpan Perubahan Master Armada?'
-                      : 'Tambah Master Armada?',
-                    description:
-                      'Data unit armada berpendingin akan disimpan dan disinkronkan ke lembar Master_Armada pada Google Spreadsheets.',
-                    details: [
-                      `Kode Unit : ${vehicleForm.id}`,
-                      `No Polisi : ${vehicleForm.plateNumber}`,
-                    ],
-                    confirmLabel: 'Simpan Armada',
-                    variant: 'primary',
-                    action: async () => {
-                      const ok = await onSaveVehicle(
-                        editingVehicleId ? 'edit' : 'create',
-                        editingVehicleId || '',
-                        vehicleForm
-                      );
-                      if (ok) setVehicleModalOpen(false);
-                    },
-                  });
+                  if (!vehicleForm.id.trim() || !vehicleForm.plateNumber.trim()) return;
+                  setVehicleSaving(true);
+                  try {
+                    const ok = await onSaveVehicle(
+                      editingVehicleId ? 'edit' : 'create',
+                      editingVehicleId || '',
+                      vehicleForm
+                    );
+                    if (ok) setVehicleModalOpen(false);
+                  } finally {
+                    setVehicleSaving(false);
+                  }
                 }}
                 className="mt-4 space-y-4"
               >
@@ -8657,15 +8642,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setVehicleModalOpen(false)}
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                    disabled={vehicleSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                    disabled={vehicleSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                   >
-                    Simpan Armada
+                    {vehicleSaving ? 'Menyimpan...' : 'Simpan Armada'}
                   </button>
                 </div>
               </form>
@@ -8696,30 +8683,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  triggerConfirm({
-                    open: true,
-                    title: editingRouteId
-                      ? 'Simpan Perubahan Master Rute?'
-                      : 'Tambah Master Rute Tujuan?',
-                    description:
-                      'Data rute tujuan akan disimpan dan disinkronkan ke lembar Master_Rute pada Google Spreadsheets.',
-                    details: [
-                      `Kode Rute     : ${routeForm.id}`,
-                      `Lokasi Tujuan : ${routeForm.destination}`,
-                    ],
-                    confirmLabel: 'Simpan Rute',
-                    variant: 'primary',
-                    action: async () => {
-                      const ok = await onSaveRoute(
-                        editingRouteId ? 'edit' : 'create',
-                        editingRouteId || '',
-                        routeForm
-                      );
-                      if (ok) setRouteModalOpen(false);
-                    },
-                  });
+                  if (!routeForm.id.trim() || !routeForm.destination.trim()) return;
+                  setRouteSaving(true);
+                  try {
+                    const ok = await onSaveRoute(
+                      editingRouteId ? 'edit' : 'create',
+                      editingRouteId || '',
+                      routeForm
+                    );
+                    if (ok) setRouteModalOpen(false);
+                  } finally {
+                    setRouteSaving(false);
+                  }
                 }}
                 className="mt-4 space-y-4"
               >
@@ -8799,15 +8776,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => setRouteModalOpen(false)}
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700"
+                    disabled={routeSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
-                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white"
+                    disabled={routeSaving}
+                    className="min-h-[44px] sm:min-h-0 rounded-xl sm:rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
                   >
-                    Simpan Rute
+                    {routeSaving ? 'Menyimpan...' : 'Simpan Rute'}
                   </button>
                 </div>
               </form>

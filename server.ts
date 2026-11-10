@@ -3170,10 +3170,6 @@ function clearSecureSessionCookie(res: express.Response): void {
         for (const sd of drivers) {
           const nk = normalizeSyncKey(sd.id);
           if (!nk) continue;
-          if (isKeyTombstoned('drivers', nk)) {
-            hasPendingMasterUpdates = true;
-            continue;
-          }
           removeDeletedTombstones('drivers', [nk]);
           if (unsyncedDriverSet.has(nk) && localById.has(nk)) {
             mergedMap.set(nk, localById.get(nk)!);
@@ -3184,14 +3180,8 @@ function clearSecureSessionCookie(res: express.Response): void {
         }
         for (const [nk, ld] of localById.entries()) {
           if (!mergedMap.has(nk)) {
-            if (unsyncedDriverSet.has(nk)) {
-              mergedMap.set(nk, ld);
-              hasPendingMasterUpdates = true;
-            } else {
-              // Deleted directly in Google Spreadsheet!
-              addDeletedTombstones('drivers', [ld.id]);
-              hasSheetDeletionsToPrune = true;
-            }
+            mergedMap.set(nk, ld);
+            hasPendingMasterUpdates = true;
           }
         }
         store.drivers = Array.from(mergedMap.values());
@@ -3216,10 +3206,6 @@ function clearSecureSessionCookie(res: express.Response): void {
         for (const sv of vehicles) {
           const nk = normalizeSyncKey(sv.id);
           if (!nk) continue;
-          if (isKeyTombstoned('vehicles', nk)) {
-            hasPendingMasterUpdates = true;
-            continue;
-          }
           removeDeletedTombstones('vehicles', [nk]);
           if (unsyncedVehicleSet.has(nk) && localById.has(nk)) {
             mergedMap.set(nk, localById.get(nk)!);
@@ -3233,13 +3219,8 @@ function clearSecureSessionCookie(res: express.Response): void {
         }
         for (const [nk, lv] of localById.entries()) {
           if (!mergedMap.has(nk)) {
-            if (unsyncedVehicleSet.has(nk)) {
-              mergedMap.set(nk, lv);
-              hasPendingMasterUpdates = true;
-            } else {
-              addDeletedTombstones('vehicles', [lv.id]);
-              hasSheetDeletionsToPrune = true;
-            }
+            mergedMap.set(nk, lv);
+            hasPendingMasterUpdates = true;
           }
         }
         store.vehicles = Array.from(mergedMap.values());
@@ -3264,10 +3245,6 @@ function clearSecureSessionCookie(res: express.Response): void {
         for (const sr of routes) {
           const nk = normalizeSyncKey(sr.id);
           if (!nk) continue;
-          if (isKeyTombstoned('routes', nk)) {
-            hasPendingMasterUpdates = true;
-            continue;
-          }
           removeDeletedTombstones('routes', [nk]);
           if (unsyncedRouteSet.has(nk) && localById.has(nk)) {
             mergedMap.set(nk, localById.get(nk)!);
@@ -3278,13 +3255,8 @@ function clearSecureSessionCookie(res: express.Response): void {
         }
         for (const [nk, lr] of localById.entries()) {
           if (!mergedMap.has(nk)) {
-            if (unsyncedRouteSet.has(nk)) {
-              mergedMap.set(nk, lr);
-              hasPendingMasterUpdates = true;
-            } else {
-              addDeletedTombstones('routes', [lr.id]);
-              hasSheetDeletionsToPrune = true;
-            }
+            mergedMap.set(nk, lr);
+            hasPendingMasterUpdates = true;
           }
         }
         store.routes = Array.from(mergedMap.values());
@@ -3309,10 +3281,6 @@ function clearSecureSessionCookie(res: express.Response): void {
         for (const sfc of fleetCards) {
           const nk = normalizeSyncKey(sfc.id);
           if (!nk) continue;
-          if (isKeyTombstoned('fleetCards', nk)) {
-            hasPendingMasterUpdates = true;
-            continue;
-          }
           removeDeletedTombstones('fleetCards', [nk]);
           if (unsyncedFleetCardSet.has(nk) && localById.has(nk)) {
             mergedMap.set(nk, localById.get(nk)!);
@@ -3327,13 +3295,8 @@ function clearSecureSessionCookie(res: express.Response): void {
         }
         for (const [nk, lfc] of localById.entries()) {
           if (!mergedMap.has(nk)) {
-            if (unsyncedFleetCardSet.has(nk)) {
-              mergedMap.set(nk, lfc);
-              hasPendingMasterUpdates = true;
-            } else {
-              addDeletedTombstones('fleetCards', [lfc.id]);
-              hasSheetDeletionsToPrune = true;
-            }
+            mergedMap.set(nk, lfc);
+            hasPendingMasterUpdates = true;
           }
         }
         store.fleetCards = Array.from(mergedMap.values());

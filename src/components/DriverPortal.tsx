@@ -756,16 +756,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     return Array.from(set);
   }, [relevantCompletedTasks, routes]);
 
+  // Kunci Nomor Polisi Armada dari Surat Tugas
   useEffect(() => {
-    if (expensePlateNumber.trim()) return;
-    const recentPlate =
+    const targetPlate =
       relevantCompletedTasks[0]?.plateNumber ||
       completedTasks[0]?.plateNumber ||
+      (myAssignments.length > 0 ? myAssignments[0]?.plateNumber : '') ||
       '';
-    if (recentPlate) {
-      setExpensePlateNumber(recentPlate);
+    if (targetPlate) {
+      setExpensePlateNumber(targetPlate.trim());
+    } else if (!expensePlateNumber) {
+      const vtype =
+        relevantCompletedTasks[0]?.vehicleType ||
+        completedTasks[0]?.vehicleType ||
+        (myAssignments.length > 0 ? myAssignments[0]?.vehicleType : '') ||
+        '';
+      if (vtype.trim()) {
+        setExpensePlateNumber(vtype.trim());
+      }
     }
-  }, [relevantCompletedTasks, completedTasks, expensePlateNumber]);
+  }, [relevantCompletedTasks, completedTasks, myAssignments, expensePlateNumber]);
 
   const activeSelectedFleetCard = useMemo(
     () =>
@@ -4876,36 +4886,32 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                     </div>
 
                     <div>
-                      <label
-                        htmlFor="driver-expense-plate"
-                        className="block text-xs font-bold text-slate-800"
-                      >
-                        Nomor Polisi Armada (Opsional)
-                      </label>
-                      {vehicles.length > 0 ? (
-                        <select
-                          id="driver-expense-plate"
-                          value={expensePlateNumber}
-                          onChange={(e) => setExpensePlateNumber(e.target.value)}
-                          className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
+                      <div className="flex items-center justify-between gap-1">
+                        <label
+                          htmlFor="driver-expense-plate"
+                          className="flex items-center gap-1.5 text-xs font-bold text-slate-800"
                         >
-                          <option value="">-- Pilih Unit Armada --</option>
-                          {vehicles.map((v) => (
-                            <option key={v.id} value={v.plateNumber}>
-                              {v.plateNumber} ({v.vehicleType})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          id="driver-expense-plate"
-                          type="text"
-                          value={expensePlateNumber}
-                          onChange={(e) => setExpensePlateNumber(e.target.value)}
-                          placeholder="Contoh: B 9123 CRK"
-                          className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-mono text-sm text-slate-900 focus:border-slate-900 focus:outline-none"
-                        />
-                      )}
+                          <Lock className="h-3.5 w-3.5 text-sky-700" />
+                          <span>Nomor Polisi Armada</span>
+                          <span className="text-rose-600">*</span>
+                        </label>
+                        <span className="inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 border border-sky-200">
+                          <Lock className="h-2.5 w-2.5" />
+                          Kunci Data Surat Tugas
+                        </span>
+                      </div>
+                      <input
+                        id="driver-expense-plate"
+                        type="text"
+                        required
+                        readOnly
+                        value={expensePlateNumber || 'Terkunci dari Surat Tugas'}
+                        placeholder="Terkunci dari Surat Tugas..."
+                        className="mt-1.5 w-full min-h-[44px] rounded-xl border border-slate-300 bg-slate-100/80 px-3.5 py-2.5 font-mono text-sm font-semibold text-slate-900 cursor-not-allowed focus:outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Otomatis dikunci dari Unit Kendaraan / Plat Nomor pada Surat Tugas Operasional Driver.
+                      </p>
                       {completedTodayTasks.length > 0 && (
                         <p className="mt-1.5 truncate text-[11px] text-slate-600">
                           Surat Tugas Selesai Hari Ini:{' '}
