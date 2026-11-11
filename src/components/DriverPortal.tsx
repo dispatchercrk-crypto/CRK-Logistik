@@ -26,6 +26,7 @@ import {
   Plus,
   Receipt,
   RefreshCw,
+  RotateCw,
   Send,
   ShieldCheck,
   SlidersHorizontal,
@@ -37,6 +38,8 @@ import {
   Wifi,
   WifiOff,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   AppConfig,
@@ -57,6 +60,9 @@ import {
   formatDatabaseTimestamp,
   formatRealTimeTimestamp,
   parseSuratJalanList,
+  uploadPhotosSequentiallyWithRetry,
+  type SequentialPhotoTask,
+  type SequentialUploadProgress,
 } from '../utils/media';
 import {
   EmbeddedTaskSnapshot,
@@ -408,6 +414,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
   const [lastSentWaLog, setLastSentWaLog] =
     useState<WhatsAppNotificationLog | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [sequentialUploadProgress, setSequentialUploadProgress] =
+    useState<SequentialUploadProgress | null>(null);
 
   const [cachedDriverTasks, setCachedDriverTasks] = useState<Assignment[]>(() =>
     readDriverAssignmentsCacheSync(driver.id)
@@ -668,6 +676,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     subtitle: string;
     src: string;
   } | null>(null);
+  const [driverReceiptZoom, setDriverReceiptZoom] = useState<number>(1);
+  const [driverReceiptRotate, setDriverReceiptRotate] = useState<number>(0);
   const [expenseBrokenImgMap, setExpenseBrokenImgMap] = useState<
     Record<string, boolean>
   >({});
@@ -864,6 +874,53 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
 
     setSubmittingExpense(true);
     try {
+      // Upload satu per satu secara berurutan (Sequential Queue) dengan auto-retry hingga 3 kali
+      let finalFotoBbm = fotoStrukBbm || undefined;
+      let finalFotoTol = fotoStrukTol || undefined;
+
+      const expensePhotoTasks: SequentialPhotoTask[] = [];
+      if (finalFotoBbm && !finalFotoBbm.startsWith('http')) {
+        expensePhotoTasks.push({
+          slotName: 'fotoStrukBbm',
+          label: 'Foto Struk Pembelian BBM',
+          dataUri: finalFotoBbm,
+          category: 'expenses',
+          entityId: `EXP-${driver.id}-${Date.now()}`,
+          suratTugas: completedNos || `EXP-${driver.id}`,
+        });
+      }
+      if (finalFotoTol && !finalFotoTol.startsWith('http')) {
+        expensePhotoTasks.push({
+          slotName: 'fotoStrukTol',
+          label: 'Foto Struk Pengeluaran Tol',
+          dataUri: finalFotoTol,
+          category: 'expenses',
+          entityId: `EXP-${driver.id}-${Date.now()}`,
+          suratTugas: completedNos || `EXP-${driver.id}`,
+        });
+      }
+
+      if (expensePhotoTasks.length > 0) {
+        try {
+          const uploadResults = await uploadPhotosSequentiallyWithRetry(
+            expensePhotoTasks,
+            {
+              appsScriptUrl: config.appsScriptUrl,
+              maxRetries: 3,
+              onProgress: (p) => setSequentialUploadProgress(p),
+            }
+          );
+          if (uploadResults.fotoStrukBbm) {
+            finalFotoBbm = uploadResults.fotoStrukBbm;
+          }
+          if (uploadResults.fotoStrukTol) {
+            finalFotoTol = uploadResults.fotoStrukTol;
+          }
+        } finally {
+          setSequentialUploadProgress(null);
+        }
+      }
+
       const ok = await onSubmitDriverExpense({
         tanggalPengiriman: cleanTanggalPengiriman,
         tujuanPengiriman: cleanTujuanPengiriman,
@@ -872,9 +929,9 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         fleetCardId: activeSelectedFleetCard.id,
         fleetCardNumber: activeSelectedFleetCard.cardNumber,
         totalPengirimanBbm: parsedBbmNominal,
-        fotoStrukBbm: fotoStrukBbm || undefined,
+        fotoStrukBbm: finalFotoBbm,
         totalPengeluaranTol: parsedTolNominal,
-        fotoStrukTol: fotoStrukTol || undefined,
+        fotoStrukTol: finalFotoTol,
         catatan: catatanPengeluaran.trim() || undefined,
       });
 
@@ -1543,6 +1600,56 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     try {
       const clickTime = new Date();
       const nowLocked = formatDatabaseTimestamp(clickTime);
+
+      // Upload satu per satu secara berurutan (Sequential Queue) dengan auto-retry hingga 3 kali
+      let finalFotoOdoBerangkat = fotoOdometerBerangkat || undefined;
+      let finalFotoSuhuBerangkat = isPendingin
+        ? fotoSuhuBerangkat || undefined
+        : undefined;
+
+      const departurePhotoTasks: SequentialPhotoTask[] = [];
+      if (finalFotoOdoBerangkat && !finalFotoOdoBerangkat.startsWith('http')) {
+        departurePhotoTasks.push({
+          slotName: 'fotoOdometerBerangkat',
+          label: 'Foto Odometer Keberangkatan',
+          dataUri: finalFotoOdoBerangkat,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+      if (finalFotoSuhuBerangkat && !finalFotoSuhuBerangkat.startsWith('http')) {
+        departurePhotoTasks.push({
+          slotName: 'fotoSuhuBerangkat',
+          label: 'Foto Monitor Pendingin Keberangkatan',
+          dataUri: finalFotoSuhuBerangkat,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+
+      if (departurePhotoTasks.length > 0) {
+        try {
+          const uploadResults = await uploadPhotosSequentiallyWithRetry(
+            departurePhotoTasks,
+            {
+              appsScriptUrl: config.appsScriptUrl,
+              maxRetries: 3,
+              onProgress: (p) => setSequentialUploadProgress(p),
+            }
+          );
+          if (uploadResults.fotoOdometerBerangkat) {
+            finalFotoOdoBerangkat = uploadResults.fotoOdometerBerangkat;
+          }
+          if (uploadResults.fotoSuhuBerangkat) {
+            finalFotoSuhuBerangkat = uploadResults.fotoSuhuBerangkat;
+          }
+        } finally {
+          setSequentialUploadProgress(null);
+        }
+      }
+
       const departurePayload: DriverDepartureSubmitPayload = {
         titikKeberangkatan: titikKeberangkatan.trim(),
         jenisKendaraan,
@@ -1551,10 +1658,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         bbmAwal,
         kondisiKendaraan,
         catatanBerangkat,
-        fotoOdometerBerangkat: fotoOdometerBerangkat || undefined,
-        fotoSuhuBerangkat: isPendingin
-          ? fotoSuhuBerangkat || undefined
-          : undefined,
+        fotoOdometerBerangkat: finalFotoOdoBerangkat,
+        fotoSuhuBerangkat: finalFotoSuhuBerangkat,
       };
 
       const candidateDepartureTask: Assignment = {
@@ -1672,6 +1777,56 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     try {
       const clickTime = new Date();
       const nowLocked = formatDatabaseTimestamp(clickTime);
+
+      // Upload satu per satu secara berurutan (Sequential Queue) dengan auto-retry hingga 3 kali
+      let finalFotoOdoSampai = fotoOdometerSampai || undefined;
+      let finalFotoSuhuSampai = isPendingin
+        ? fotoSuhuSampai || undefined
+        : undefined;
+
+      const deliveredPhotoTasks: SequentialPhotoTask[] = [];
+      if (finalFotoOdoSampai && !finalFotoOdoSampai.startsWith('http')) {
+        deliveredPhotoTasks.push({
+          slotName: 'fotoOdometerSampai',
+          label: 'Foto Odometer Sampai',
+          dataUri: finalFotoOdoSampai,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+      if (finalFotoSuhuSampai && !finalFotoSuhuSampai.startsWith('http')) {
+        deliveredPhotoTasks.push({
+          slotName: 'fotoSuhuSampai',
+          label: 'Foto Monitor Pendingin Sampai',
+          dataUri: finalFotoSuhuSampai,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+
+      if (deliveredPhotoTasks.length > 0) {
+        try {
+          const uploadResults = await uploadPhotosSequentiallyWithRetry(
+            deliveredPhotoTasks,
+            {
+              appsScriptUrl: config.appsScriptUrl,
+              maxRetries: 3,
+              onProgress: (p) => setSequentialUploadProgress(p),
+            }
+          );
+          if (uploadResults.fotoOdometerSampai) {
+            finalFotoOdoSampai = uploadResults.fotoOdometerSampai;
+          }
+          if (uploadResults.fotoSuhuSampai) {
+            finalFotoSuhuSampai = uploadResults.fotoSuhuSampai;
+          }
+        } finally {
+          setSequentialUploadProgress(null);
+        }
+      }
+
       const deliveredPayload: DriverDeliveredSubmitPayload = {
         jenisKendaraan: effectiveDeliveredJenis,
         kmSampai: Number(kmSampai) || 0,
@@ -1679,8 +1834,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         bbmSampai: bbmSampai.trim(),
         kondisiSampai: kondisiSampai.trim(),
         catatanSampai: catatanSampai.trim(),
-        fotoOdometerSampai: fotoOdometerSampai || undefined,
-        fotoSuhuSampai: isPendingin ? fotoSuhuSampai || undefined : undefined,
+        fotoOdometerSampai: finalFotoOdoSampai,
+        fotoSuhuSampai: finalFotoSuhuSampai,
       };
 
       const candidateDeliveredTask: Assignment = {
@@ -1789,6 +1944,54 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
     try {
       const clickTime = new Date();
       const nowLocked = formatDatabaseTimestamp(clickTime);
+
+      // Upload satu per satu secara berurutan (Sequential Queue) dengan auto-retry hingga 3 kali
+      let finalFotoBukti = fotoBuktiSerahTerima || undefined;
+      let finalTtdPenerima = tandaTanganPenerima || undefined;
+
+      const handoverPhotoTasks: SequentialPhotoTask[] = [];
+      if (finalFotoBukti && !finalFotoBukti.startsWith('http')) {
+        handoverPhotoTasks.push({
+          slotName: 'fotoBuktiSerahTerima',
+          label: 'Foto Bukti Serah Terima',
+          dataUri: finalFotoBukti,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+      if (finalTtdPenerima && !finalTtdPenerima.startsWith('http')) {
+        handoverPhotoTasks.push({
+          slotName: 'tandaTanganPenerima',
+          label: 'Tanda Tangan Penerima',
+          dataUri: finalTtdPenerima,
+          category: 'assignments',
+          entityId: task.id,
+          suratTugas: task.noPenugasan || task.id,
+        });
+      }
+
+      if (handoverPhotoTasks.length > 0) {
+        try {
+          const uploadResults = await uploadPhotosSequentiallyWithRetry(
+            handoverPhotoTasks,
+            {
+              appsScriptUrl: config.appsScriptUrl,
+              maxRetries: 3,
+              onProgress: (p) => setSequentialUploadProgress(p),
+            }
+          );
+          if (uploadResults.fotoBuktiSerahTerima) {
+            finalFotoBukti = uploadResults.fotoBuktiSerahTerima;
+          }
+          if (uploadResults.tandaTanganPenerima) {
+            finalTtdPenerima = uploadResults.tandaTanganPenerima;
+          }
+        } finally {
+          setSequentialUploadProgress(null);
+        }
+      }
+
       const handoverPayload: DriverHandoverSubmitPayload = {
         jenisKendaraan: effectiveHandoverJenis,
         kmAkhir: inheritedKmAkhir,
@@ -1799,8 +2002,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
         catatanSerahTerima: catatanSerahTerima.trim(),
         fotoOdometerSerahTerima: inheritedFotoOdo,
         fotoSuhuSerahTerima: inheritedFotoSuhu,
-        fotoBuktiSerahTerima: fotoBuktiSerahTerima || undefined,
-        tandaTanganPenerima: tandaTanganPenerima || undefined,
+        fotoBuktiSerahTerima: finalFotoBukti,
+        tandaTanganPenerima: finalTtdPenerima,
       };
 
       const candidateHandoverTask: Assignment = {
@@ -3542,6 +3745,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                             required
                             value={fotoOdometerBerangkat}
                             onChange={setFotoOdometerBerangkat}
+                            appsScriptUrl={config.appsScriptUrl}
+                            suratTugas={activeTasks[0]?.noPenugasan || 'ST-GENERAL'}
                           />
 
                           {isDeparturePendingin && (
@@ -3551,6 +3756,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               required
                               value={fotoSuhuBerangkat}
                               onChange={setFotoSuhuBerangkat}
+                              appsScriptUrl={config.appsScriptUrl}
+                              suratTugas={activeTasks[0]?.noPenugasan || 'ST-GENERAL'}
                             />
                           )}
                         </div>
@@ -4056,6 +4263,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           required
                           value={fotoBuktiSerahTerima}
                           onChange={setFotoBuktiSerahTerima}
+                          appsScriptUrl={config.appsScriptUrl}
+                          suratTugas={activeTasks[0]?.noPenugasan || 'ST-GENERAL'}
                         />
 
                         <SignatureCanvas
@@ -4330,23 +4539,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               {bbmReceiptSrc && (
                                 <button
                                   type="button"
-                                  onClick={() =>
+                                  onClick={() => {
+                                    setDriverReceiptZoom(1);
+                                    setDriverReceiptRotate(0);
                                     setExpenseReceiptPreview({
                                       title: `Struk Pengeluaran BBM · ${exp.id}`,
                                       subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
                                         exp.totalPengirimanBbm
                                       )}`,
                                       src: bbmReceiptSrc,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   className="group relative flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/70 p-1.5 pr-3 text-left transition-all hover:bg-sky-100 hover:border-sky-300 shadow-2xs"
                                   title="Klik untuk memperbesar Foto Struk BBM"
                                 >
-                                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                  <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200" style={{ backgroundColor: '#f4f4f5' }}>
                                     <img
                                       src={bbmReceiptSrc}
                                       alt="Pratinjau Struk BBM"
-                                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                      className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
+                                      style={{ objectFit: 'contain' }}
                                     />
                                     <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                       <Maximize2 className="h-3.5 w-3.5 text-white" />
@@ -4366,23 +4578,26 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                               {tolReceiptSrc && (
                                 <button
                                   type="button"
-                                  onClick={() =>
+                                  onClick={() => {
+                                    setDriverReceiptZoom(1);
+                                    setDriverReceiptRotate(0);
                                     setExpenseReceiptPreview({
                                       title: `Struk Pengeluaran Tol · ${exp.id}`,
                                       subtitle: `Kartu ${exp.fleetCardNumber} · ${formatIdrCurrency(
                                         exp.totalPengeluaranTol
                                       )}`,
                                       src: tolReceiptSrc,
-                                    })
-                                  }
+                                    });
+                                  }}
                                   className="group relative flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-1.5 pr-3 text-left transition-all hover:bg-emerald-100 hover:border-emerald-300 shadow-2xs"
                                   title="Klik untuk memperbesar Foto Struk Tol"
                                 >
-                                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-900">
+                                  <div className="relative h-16 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-200" style={{ backgroundColor: '#f4f4f5' }}>
                                     <img
                                       src={tolReceiptSrc}
                                       alt="Pratinjau Struk Tol"
-                                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                      className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
+                                      style={{ objectFit: 'contain' }}
                                     />
                                     <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                       <Maximize2 className="h-3.5 w-3.5 text-white" />
@@ -5037,6 +5252,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           setFotoStrukBbm(val);
                           setExpenseValidationErr('');
                         }}
+                        appsScriptUrl={config.appsScriptUrl}
+                        suratTugas={activeTasks[0]?.noPenugasan || 'ST-GENERAL'}
                       />
                     </div>
                   </div>
@@ -5093,6 +5310,8 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                           setFotoStrukTol(val);
                           setExpenseValidationErr('');
                         }}
+                        appsScriptUrl={config.appsScriptUrl}
+                        suratTugas={activeTasks[0]?.noPenugasan || 'ST-GENERAL'}
                       />
                     </div>
                   </div>
@@ -5420,42 +5639,89 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
       {/* Modal Preview Foto Struk Pengeluaran Driver */}
       {expenseReceiptPreview && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs"
           onClick={() => setExpenseReceiptPreview(null)}
         >
           <div
-            className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-xl"
+            className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col max-h-[92vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 bg-slate-50">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-slate-900">
                   {expenseReceiptPreview.title}
                 </h3>
-                <p className="truncate font-mono text-xs text-slate-600 tabular-nums">
+                <p className="truncate font-mono text-xs text-slate-500 tabular-nums">
                   {expenseReceiptPreview.subtitle}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setExpenseReceiptPreview(null)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Tutup pratinjau struk"
-              >
-                <X className="h-4 w-4" />
-              </button>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={driverReceiptZoom <= 1}
+                  onClick={() => setDriverReceiptZoom((prev) => Math.max(1, prev - 0.5))}
+                  className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  title="Perkecil (Zoom Out)"
+                >
+                  <ZoomOut className="h-3.5 w-3.5" />
+                </button>
+                <span className="font-mono text-xs font-bold text-slate-700 min-w-[45px] text-center tabular-nums">
+                  {Math.round(driverReceiptZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  disabled={driverReceiptZoom >= 4}
+                  onClick={() => setDriverReceiptZoom((prev) => Math.min(4, prev + 0.5))}
+                  className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                  title="Perbesar (Zoom In)"
+                >
+                  <ZoomIn className="h-3.5 w-3.5" />
+                </button>
+                {driverReceiptZoom !== 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setDriverReceiptZoom(1)}
+                    className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-1.5 text-xs text-slate-600 hover:bg-slate-100"
+                    title="Reset Zoom"
+                  >
+                    100%
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDriverReceiptRotate((prev) => (prev + 90) % 360)}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  title="Putar 90°"
+                >
+                  <RotateCw className="h-3.5 w-3.5 text-slate-700" />
+                  <span className="hidden sm:inline">Putar 90°</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpenseReceiptPreview(null)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                  aria-label="Tutup pratinjau struk"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <div className="bg-slate-950 p-4">
+
+            <div
+              className="flex-1 overflow-auto p-4 flex items-center justify-center min-h-[300px] max-h-[68vh]"
+              style={{ backgroundColor: '#f4f4f5' }}
+            >
               {expenseBrokenImgMap[expenseReceiptPreview.src] ? (
-                <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-slate-800 bg-slate-900 p-6 text-center text-xs text-slate-300">
-                  <ImageIcon className="mb-2 h-8 w-8 text-slate-500" />
+                <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500 shadow-xs">
+                  <ImageIcon className="mb-2 h-8 w-8 text-slate-400" />
                   <p>Pratinjau langsung tidak tersedia untuk tautan eksternal ini.</p>
                   {expenseReceiptPreview.src.startsWith('http') && (
                     <a
                       href={expenseReceiptPreview.src}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 font-semibold text-slate-900"
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 font-semibold text-white hover:bg-slate-800"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Buka File Struk
@@ -5463,19 +5729,32 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
                   )}
                 </div>
               ) : (
-                <img
-                  src={expenseReceiptPreview.src}
-                  alt={expenseReceiptPreview.title}
-                  referrerPolicy="no-referrer"
-                  onError={() =>
-                    setExpenseBrokenImgMap((prev) => ({
-                      ...prev,
-                      [expenseReceiptPreview.src]: true,
-                    }))
-                  }
-                  className="mx-auto max-h-[70vh] w-auto rounded-lg object-contain"
-                />
+                <div
+                  className="relative transition-transform duration-200 ease-out"
+                  style={{
+                    transform: `scale(${driverReceiptZoom}) rotate(${driverReceiptRotate}deg)`,
+                    transformOrigin: 'center center',
+                  }}
+                >
+                  <img
+                    src={expenseReceiptPreview.src}
+                    alt={expenseReceiptPreview.title}
+                    referrerPolicy="no-referrer"
+                    onError={() =>
+                      setExpenseBrokenImgMap((prev) => ({
+                        ...prev,
+                        [expenseReceiptPreview.src]: true,
+                      }))
+                    }
+                    className="max-h-[62vh] w-auto max-w-full rounded-md shadow-md object-contain select-none"
+                    style={{ objectFit: 'contain' }}
+                  />
+                </div>
               )}
+            </div>
+
+            <div className="border-t border-slate-200 bg-white px-4 py-2.5 text-center text-xs text-slate-500">
+              Gunakan tombol Zoom In (+) &amp; Zoom Out (-) untuk membaca rincian angka struk belanja, atau Putar 90° jika posisi struk miring.
             </div>
           </div>
         </div>
@@ -5599,6 +5878,74 @@ export const DriverPortal: React.FC<DriverPortalProps> = ({
           </button>
         </div>
       </nav>
+
+      {/* Indikator Status Upload Foto Berurutan (Sequential Queue) & Auto-Retry */}
+      {sequentialUploadProgress && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/20 text-sky-400">
+                <RefreshCw className="h-6 w-6 animate-spin" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-white">
+                    {sequentialUploadProgress.status === 'retrying'
+                      ? 'Mencoba Ulang Upload Foto...'
+                      : 'Mengunggah Foto ke Google Drive...'}
+                  </h3>
+                  <span className="font-mono text-xs font-semibold text-sky-400 tabular-nums">
+                    {sequentialUploadProgress.currentIndex} / {sequentialUploadProgress.totalCount}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-300 truncate">
+                  {sequentialUploadProgress.currentLabel}
+                </p>
+                {sequentialUploadProgress.retryAttempt &&
+                  sequentialUploadProgress.retryAttempt > 1 && (
+                    <p className="mt-1 text-[11px] font-semibold text-amber-300">
+                      Percobaan ke-{sequentialUploadProgress.retryAttempt} dari 3 (Auto-Retry)
+                    </p>
+                  )}
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="mt-5">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all duration-300 ease-out"
+                  style={{
+                    width: `${Math.round(
+                      (sequentialUploadProgress.currentIndex /
+                        Math.max(1, sequentialUploadProgress.totalCount)) *
+                        100
+                    )}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                <span>Kompresi 1200px (0.82)</span>
+                <span className="font-mono font-medium text-slate-300">
+                  {Math.round(
+                    (sequentialUploadProgress.currentIndex /
+                      Math.max(1, sequentialUploadProgress.totalCount)) *
+                      100
+                  )}%
+                </span>
+              </div>
+            </div>
+
+            <p className="mt-4 text-center text-[11px] text-slate-400">
+              Mohon tunggu, proses antrean sequential upload sedang memastikan link Google Drive tersimpan.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

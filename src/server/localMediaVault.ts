@@ -473,3 +473,94 @@ export async function fetchRemoteDriveImageBuffer(
 
   return null;
 }
+
+/**
+ * Menghapus file sementara di folder lokal server setelah foto berhasil di-upload ke Google Drive
+ * dan mendapatkan URL Google Drive yang valid, agar penyimpanan server tidak penuh.
+ */
+export function deleteMediaFileLocally(
+  category: 'assignments' | 'expenses',
+  entityId: string,
+  slot: string
+): boolean {
+  const cleanId = sanitizeId(entityId);
+  const cleanSlot = sanitizeSlot(slot);
+  if (!cleanId || !cleanSlot) return false;
+
+  const dir = path.join(MEDIA_BASE_DIR, category, cleanId);
+  const candidateSlots = [cleanSlot];
+
+  if (cleanSlot === 'odo-berangkat' || cleanSlot === 'foto-odometer-berangkat') {
+    candidateSlots.push('odo-berangkat', 'foto-odometer-berangkat');
+  } else if (cleanSlot === 'suhu-berangkat' || cleanSlot === 'foto-suhu-berangkat') {
+    candidateSlots.push('suhu-berangkat', 'foto-suhu-berangkat');
+  } else if (
+    cleanSlot === 'odo-serahterima' ||
+    cleanSlot === 'foto-odometer-serahterima' ||
+    cleanSlot === 'odo-sampai' ||
+    cleanSlot === 'foto-odometer-sampai'
+  ) {
+    candidateSlots.push('odo-serahterima', 'foto-odometer-serahterima', 'odo-sampai', 'foto-odometer-sampai');
+  } else if (
+    cleanSlot === 'suhu-serahterima' ||
+    cleanSlot === 'foto-suhu-serahterima' ||
+    cleanSlot === 'suhu-sampai' ||
+    cleanSlot === 'foto-suhu-sampai'
+  ) {
+    candidateSlots.push('suhu-serahterima', 'foto-suhu-serahterima', 'suhu-sampai', 'foto-suhu-sampai');
+  } else if (cleanSlot === 'bukti-serahterima' || cleanSlot === 'foto-bukti-serahterima') {
+    candidateSlots.push('bukti-serahterima', 'foto-bukti-serahterima');
+  } else if (cleanSlot === 'ttd-penerima' || cleanSlot === 'tanda-tangan-penerima') {
+    candidateSlots.push('ttd-penerima', 'tanda-tangan-penerima');
+  } else if (cleanSlot === 'struk-bbm' || cleanSlot === 'foto-struk-bbm' || cleanSlot === 'bbm') {
+    candidateSlots.push('struk-bbm', 'foto-struk-bbm', 'bbm');
+  } else if (cleanSlot === 'struk-tol' || cleanSlot === 'foto-struk-tol' || cleanSlot === 'tol') {
+    candidateSlots.push('struk-tol', 'foto-struk-tol', 'tol');
+  }
+
+  let anyDeleted = false;
+  for (const s of candidateSlots) {
+    const binPath = path.join(dir, `${s}.bin`);
+    const metaPath = path.join(dir, `${s}.meta.json`);
+    if (fs.existsSync(binPath)) {
+      try {
+        fs.unlinkSync(binPath);
+        anyDeleted = true;
+      } catch {}
+    }
+    if (fs.existsSync(metaPath)) {
+      try {
+        fs.unlinkSync(metaPath);
+        anyDeleted = true;
+      } catch {}
+    }
+  }
+
+  // Jika folder sudah kosong, bersihkan direktori
+  try {
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+      fs.rmdirSync(dir);
+    }
+  } catch {}
+
+  return anyDeleted;
+}
+
+export function deleteEntityMediaFolderLocally(
+  category: 'assignments' | 'expenses',
+  entityId: string
+): boolean {
+  const cleanId = sanitizeId(entityId);
+  if (!cleanId) return false;
+  const dir = path.join(MEDIA_BASE_DIR, category, cleanId);
+  if (fs.existsSync(dir)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+

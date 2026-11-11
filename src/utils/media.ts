@@ -1,7 +1,7 @@
 export async function compressImageFile(
   file: File,
-  maxDimension = 960,
-  quality = 0.72
+  maxDimension = 1200,
+  quality = 0.82
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1136,4 +1136,360 @@ export function evaluateActiveUnitsCbmSummary(
     units,
   };
 }
+
+// ============================================================================
+// Dual Image Compression (Main max 1200px @ 0.82, Thumbnail max 800px @ 0.82)
+// Ukuran file berkisar 200-400KB agar proses upload cepat meski sinyal lemah,
+// namun angka odometer & tulisan struk tetap tajam dan terbaca jelas.
+// ============================================================================
+
+export async function compressImageDual(
+  file: File,
+  maxDimension = 1200,
+  quality = 0.82
+): Promise<{ mainBase64: string; thumbnailBase64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Format gambar tidak didukung.'));
+      img.onload = () => {
+        // 1. Foto Utama (Main): maksimal 1200px, JPEG kualitas 0.85 (rasio aspek asli, tidak di-crop kotak)
+        let wMain = img.width;
+        let hMain = img.height;
+        if (wMain > maxDimension || hMain > maxDimension) {
+          if (wMain >= hMain) {
+            hMain = Math.round((hMain * maxDimension) / wMain);
+            wMain = maxDimension;
+          } else {
+            wMain = Math.round((wMain * maxDimension) / hMain);
+            hMain = maxDimension;
+          }
+        }
+        const canvasMain = document.createElement('canvas');
+        canvasMain.width = wMain;
+        canvasMain.height = hMain;
+        const ctxMain = canvasMain.getContext('2d');
+        if (ctxMain) {
+          ctxMain.fillStyle = '#ffffff';
+          ctxMain.fillRect(0, 0, wMain, hMain);
+          ctxMain.drawImage(img, 0, 0, wMain, hMain);
+        }
+        const mainBase64 = canvasMain.toDataURL('image/jpeg', quality);
+
+        // 2. Thumbnail Struk: maksimal 800px, JPEG kualitas 0.85 (tetap tajam, rasio asli tidak di-crop)
+        const maxThumb = Math.min(800, maxDimension);
+        let wThumb = img.width;
+        let hThumb = img.height;
+        if (wThumb > maxThumb || hThumb > maxThumb) {
+          if (wThumb >= hThumb) {
+            hThumb = Math.round((hThumb * maxThumb) / wThumb);
+            wThumb = maxThumb;
+          } else {
+            wThumb = Math.round((wThumb * maxThumb) / hThumb);
+            hThumb = maxThumb;
+          }
+        }
+        const canvasThumb = document.createElement('canvas');
+        canvasThumb.width = wThumb;
+        canvasThumb.height = hThumb;
+        const ctxThumb = canvasThumb.getContext('2d');
+        if (ctxThumb) {
+          ctxThumb.fillStyle = '#ffffff';
+          ctxThumb.fillRect(0, 0, wThumb, hThumb);
+          ctxThumb.drawImage(img, 0, 0, wThumb, hThumb);
+        }
+        const thumbnailBase64 = canvasThumb.toDataURL('image/jpeg', quality);
+
+        resolve({ mainBase64, thumbnailBase64 });
+      };
+      img.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Memutar gambar (Data URL base64) sebesar 90 derajat searah jarum jam (atau kelipatan 90).
+ * Menjaga kualitas tajam 0.85 untuk struk / dokumen.
+ */
+export async function rotateImageBase64(
+  dataUrl: string,
+  degrees: number = 90,
+  quality: number = 0.85
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onerror = () => reject(new Error('Gagal memproses rotasi gambar.'));
+    img.onload = () => {
+      const normalizedDegrees = ((degrees % 360) + 360) % 360;
+      if (normalizedDegrees === 0) {
+        resolve(dataUrl);
+        return;
+      }
+      const isPerpendicular = normalizedDegrees === 90 || normalizedDegrees === 270;
+      const canvas = document.createElement('canvas');
+      canvas.width = isPerpendicular ? img.height : img.width;
+      canvas.height = isPerpendicular ? img.width : img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((normalizedDegrees * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+
+      const rotatedBase64 = canvas.toDataURL('image/jpeg', quality);
+      resolve(rotatedBase64);
+    };
+    img.src = dataUrl;
+  });
+}
+
+export interface PhotoQueueItem {
+  idUnik: string;
+  tanggalKirim: string;
+  suratTugas: string;
+  fileName: string;
+  base64Data: string;
+  thumbnailBase64: string;
+  status: 'Menunggu Unggah' | 'Tersimpan di Drive' | 'Gagal';
+  driveUrl?: string;
+  thumbnailUrl?: string;
+}
+
+const PHOTO_QUEUE_STORAGE_KEY = 'crk_photo_upload_queue_v1';
+
+export function getPhotoUploadQueue(): PhotoQueueItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PHOTO_QUEUE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePhotoUploadQueue(items: PhotoQueueItem[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PHOTO_QUEUE_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+export async function uploadPhotoToGasWebApp(
+  item: PhotoQueueItem,
+  appsScriptUrl: string
+): Promise<{ success: boolean; url?: string; thumbnailUrl?: string }> {
+  if (!appsScriptUrl || !/^https:\/\/script\.google\.com\//i.test(appsScriptUrl)) {
+    return { success: false };
+  }
+  try {
+    const resp = await fetch(appsScriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'uploadFotoDrive',
+        data: {
+          idUnik: item.idUnik,
+          tanggalKirim: item.tanggalKirim,
+          suratTugas: item.suratTugas,
+          fileName: item.fileName,
+          base64Data: item.base64Data,
+        },
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!resp.ok) return { success: false };
+    const text = await resp.text();
+    const parsed = JSON.parse(text) as {
+      status?: string;
+      ok?: boolean;
+      url?: string;
+      thumbnailUrl?: string;
+    };
+    if (parsed?.status === 'success' || parsed?.ok) {
+      return {
+        success: true,
+        url: parsed.url,
+        thumbnailUrl: parsed.thumbnailUrl,
+      };
+    }
+    return { success: false };
+  } catch {
+    return { success: false };
+  }
+}
+
+export interface SequentialPhotoTask {
+  slotName: string;
+  label: string;
+  dataUri: string;
+  suratTugas: string;
+  category?: 'assignments' | 'expenses';
+  entityId?: string;
+}
+
+export interface SequentialUploadProgress {
+  currentIndex: number;
+  totalCount: number;
+  currentLabel: string;
+  status: 'uploading' | 'retrying' | 'success' | 'failed';
+  retryAttempt?: number;
+}
+
+/**
+ * Mengunggah beberapa foto secara berurutan (Sequential Queue) satu per satu
+ * dengan mekanisme auto-retry otomatis hingga 3 kali jika terjadi timeout/koneksi terputus.
+ * Mengembalikan map URL Google Drive yang valid untuk setiap slot foto.
+ */
+export async function uploadPhotosSequentiallyWithRetry(
+  tasks: SequentialPhotoTask[],
+  options: {
+    appsScriptUrl?: string;
+    maxRetries?: number;
+    onProgress?: (progress: SequentialUploadProgress) => void;
+  } = {}
+): Promise<Record<string, string>> {
+  const { appsScriptUrl = '', maxRetries = 3, onProgress } = options;
+  const results: Record<string, string> = {};
+
+  const validTasks = tasks.filter(
+    (t) => t.dataUri && typeof t.dataUri === 'string' && t.dataUri.trim()
+  );
+  const totalCount = validTasks.length;
+
+  for (let idx = 0; idx < totalCount; idx++) {
+    const task = validTasks[idx];
+    const currentIndex = idx + 1;
+
+    // Jika foto sudah berupa Google Drive URL, tidak perlu di-upload lagi
+    if (
+      task.dataUri.startsWith('http://') ||
+      task.dataUri.startsWith('https://')
+    ) {
+      results[task.slotName] = task.dataUri;
+      if (onProgress) {
+        onProgress({
+          currentIndex,
+          totalCount,
+          currentLabel: task.label,
+          status: 'success',
+        });
+      }
+      continue;
+    }
+
+    let uploadedDriveUrl = '';
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (onProgress) {
+        onProgress({
+          currentIndex,
+          totalCount,
+          currentLabel: task.label,
+          status: attempt > 1 ? 'retrying' : 'uploading',
+          retryAttempt: attempt,
+        });
+      }
+
+      try {
+        // 1. Coba upload via endpoint server backend (/api/upload-drive-photo)
+        const resp = await fetch('/api/upload-drive-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: task.category || 'assignments',
+            entityId: task.entityId || task.suratTugas,
+            slot: task.slotName,
+            suratTugas: task.suratTugas,
+            fileName: `${task.suratTugas}_${task.slotName}.jpg`,
+            dataUri: task.dataUri,
+          }),
+          signal: AbortSignal.timeout(25000),
+        });
+
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json?.success && json?.url && typeof json.url === 'string' && json.url.startsWith('http')) {
+            uploadedDriveUrl = json.url;
+            break;
+          }
+        }
+      } catch {
+        // Coba jalur fallback jika endpoint backend gagal
+      }
+
+      // 2. Jalur fallback: coba upload langsung ke Google Apps Script Web App jika URL tersedia
+      if (!uploadedDriveUrl && appsScriptUrl && /^https:\/\/script\.google\.com\//i.test(appsScriptUrl)) {
+        try {
+          const gasRes = await uploadPhotoToGasWebApp(
+            {
+              idUnik: `IMG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              tanggalKirim: new Date().toISOString(),
+              suratTugas: task.suratTugas,
+              fileName: `${task.suratTugas}_${task.slotName}.jpg`,
+              base64Data: task.dataUri,
+              thumbnailBase64: task.dataUri,
+              status: 'Menunggu Unggah',
+            },
+            appsScriptUrl
+          );
+          if (gasRes?.success && gasRes.url && gasRes.url.startsWith('http')) {
+            uploadedDriveUrl = gasRes.url;
+            break;
+          }
+        } catch {
+          // Gagal pada percobaan ini
+        }
+      }
+
+      // Jeda sebelum retry berikutnya (exponential backoff)
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, attempt * 1200));
+      }
+    }
+
+    if (uploadedDriveUrl) {
+      results[task.slotName] = uploadedDriveUrl;
+      if (onProgress) {
+        onProgress({
+          currentIndex,
+          totalCount,
+          currentLabel: task.label,
+          status: 'success',
+        });
+      }
+    } else {
+      // Jika setelah 3x retry belum berhasil, simpan dataUri asli sebagai fallback aman
+      results[task.slotName] = task.dataUri;
+      if (onProgress) {
+        onProgress({
+          currentIndex,
+          totalCount,
+          currentLabel: task.label,
+          status: 'failed',
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+
 

@@ -17,6 +17,8 @@ import {
   saveMediaFileLocally,
   saveRawBufferLocally,
   getMediaFileLocally,
+  deleteMediaFileLocally,
+  deleteEntityMediaFolderLocally,
   extractAndSaveAllAssignmentPhotosLocally,
   extractGoogleDriveFileId,
   buildDirectGoogleDriveImageCandidates,
@@ -5949,6 +5951,324 @@ function clearSecureSessionCookie(res: express.Response): void {
     res.json({ success: true, state: publicState });
   });
 
+  function isDriveUrl(val?: string | null): boolean {
+    if (!val) return false;
+    const str = String(val).trim();
+    return /drive\.google\.com|googleusercontent\.com/i.test(str);
+  }
+
+  async function uploadPhotoToGoogleDriveBackend(params: {
+    suratTugas: string;
+    fileName: string;
+    base64Data: string;
+    category?: 'assignments' | 'expenses';
+    entityId?: string;
+    slot?: string;
+  }): Promise<string | null> {
+    const { suratTugas, fileName, base64Data, category = 'assignments', entityId, slot } = params;
+    if (!base64Data) return null;
+    if (isDriveUrl(base64Data)) return base64Data;
+    if (!base64Data.startsWith('data:image/')) return null;
+
+    // 1. Google Apps Script Web App (kuota penuh akun pribadi Google driver/admin)
+    const gasUrl = String(store.appsScriptUrl || '').trim();
+    if (gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl)) {
+      try {
+        const resp = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'uploadFotoDrive',
+            data: {
+              idUnik: `IMG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              tanggalKirim: new Date().toISOString(),
+              suratTugas,
+              fileName,
+              base64Data,
+            },
+          }),
+          signal: AbortSignal.timeout(28000),
+        });
+
+        if (resp.ok) {
+          const text = await resp.text();
+          let parsed: any;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = null;
+          }
+          const driveUrl = parsed?.url || parsed?.webViewLink || parsed?.fileUrl;
+          if (driveUrl && typeof driveUrl === 'string' && (isDriveUrl(driveUrl) || driveUrl.startsWith('http'))) {
+            if (entityId && slot) {
+              deleteMediaFileLocally(category, entityId, slot);
+            }
+            return driveUrl;
+          }
+        }
+      } catch (err) {
+        console.warn('[DriveSyncBackend] Apps Script upload error:', err);
+      }
+    }
+
+    // 2. Google Service Account Drive Upload
+    const rootId = store.driveRootFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+    if (rootId && isGoogleServiceAccountConfigured()) {
+      try {
+        const monthSeg = new Date().toISOString().slice(0, 7);
+        const res = await uploadDataUriToDriveViaServiceAccount({
+          rootFolderId: rootId,
+          subfolderChain: [
+            category === 'expenses' ? 'Pengeluaran_Driver' : monthSeg,
+            suratTugas.replace(/[\\/:*?"<>|]+/g, '-'),
+          ],
+          fileBaseName: fileName.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '-'),
+          dataUri: base64Data,
+        });
+
+        if (res?.fileUrl && isDriveUrl(res.fileUrl)) {
+          if (entityId && slot) {
+            deleteMediaFileLocally(category, entityId, slot);
+          }
+          return res.fileUrl;
+        }
+      } catch (err) {
+        console.warn('[DriveSyncBackend] Service Account Drive upload error:', err);
+      }
+    }
+
+    return null;
+  }
+
+  // Endpoint upload foto individual dengan verifikasi Google Drive & penghapusan file sementara
+  app.post('/api/upload-drive-photo', async (req, res) => {
+    const { category, entityId, slot, suratTugas, fileName, dataUri } = req.body || {};
+    if (!dataUri || typeof dataUri !== 'string' || !dataUri.trim()) {
+      res.status(400).json({ success: false, error: 'Data foto wajib diisi.' });
+      return;
+    }
+
+    if (isDriveUrl(dataUri)) {
+      res.json({ success: true, url: dataUri.trim() });
+      return;
+    }
+
+    const driveUrl = await uploadPhotoToGoogleDriveBackend({
+      suratTugas: suratTugas || entityId || 'ST-GENERAL',
+      fileName: fileName || `${slot || 'photo'}_${Date.now()}.jpg`,
+      base64Data: dataUri,
+      category: category === 'expenses' ? 'expenses' : 'assignments',
+      entityId,
+      slot,
+    });
+
+    if (!driveUrl) {
+      res.status(502).json({
+        success: false,
+        error: 'Gagal mengunggah foto ke Google Drive. Pastikan Web App Google Apps Script atau Google Drive Root Folder terhubung.',
+      });
+      return;
+    }
+
+    // Hapus file sementara di folder lokal server agar penyimpanan server tidak penuh
+    if (entityId && slot) {
+      deleteMediaFileLocally(category === 'expenses' ? 'expenses' : 'assignments', entityId, slot);
+    }
+
+    res.json({
+      success: true,
+      url: driveUrl,
+    });
+  });
+
+  // Fitur Pemulihan Foto yang Tertahan (Retry Pending Sync):
+  // Mendeteksi baris data dengan path lokal ("api/assignments/...") yang masih tersimpan di server,
+  // lalu otomatis meng-upload file tersebut ke Google Drive, memperbarui link-nya di Google Sheets,
+  // dan menghapus file lokalnya setelah berhasil.
+  app.post('/api/media/sync-pending-to-drive', async (req, res) => {
+    let syncedCount = 0;
+    let failedCount = 0;
+    const updatedAssignments: string[] = [];
+    const updatedExpenses: string[] = [];
+
+    // 1. Scan semua surat tugas yang memiliki foto tertahan atau path lokal
+    for (const asg of store.assignments) {
+      let asgUpdated = false;
+      const dm = asg.driveMedia || {};
+      const slotDefs = [
+        {
+          key: 'fotoOdometerBerangkatUrl' as const,
+          slotApi: 'odo-berangkat',
+          name: 'Odometer_Keberangkatan',
+          existingUrl: dm.fotoOdometerBerangkatUrl,
+          raw: asg.departureData?.fotoOdometerBerangkat,
+        },
+        {
+          key: 'fotoSuhuBerangkatUrl' as const,
+          slotApi: 'suhu-berangkat',
+          name: 'Suhu_Keberangkatan',
+          existingUrl: dm.fotoSuhuBerangkatUrl,
+          raw: asg.departureData?.fotoSuhuBerangkat,
+        },
+        {
+          key: 'fotoOdometerSerahTerimaUrl' as const,
+          slotApi: 'odo-serahterima',
+          name: 'Odometer_Sampai',
+          existingUrl: dm.fotoOdometerSerahTerimaUrl,
+          raw: asg.handoverData?.fotoOdometerSerahTerima || asg.deliveredData?.fotoOdometerSampai,
+        },
+        {
+          key: 'fotoSuhuSerahTerimaUrl' as const,
+          slotApi: 'suhu-serahterima',
+          name: 'Suhu_Sampai',
+          existingUrl: dm.fotoSuhuSerahTerimaUrl,
+          raw: asg.handoverData?.fotoSuhuSerahTerima || asg.deliveredData?.fotoSuhuSampai,
+        },
+        {
+          key: 'fotoBuktiSerahTerimaUrl' as const,
+          slotApi: 'bukti-serahterima',
+          name: 'Bukti_SerahTerima',
+          existingUrl: dm.fotoBuktiSerahTerimaUrl,
+          raw: asg.handoverData?.fotoBuktiSerahTerima,
+        },
+        {
+          key: 'tandaTanganPenerimaUrl' as const,
+          slotApi: 'ttd-penerima',
+          name: 'TandaTangan_Penerima',
+          existingUrl: dm.tandaTanganPenerimaUrl,
+          raw: asg.handoverData?.tandaTanganPenerima,
+        },
+      ];
+
+      for (const slot of slotDefs) {
+        const isDrive = isDriveUrl(slot.existingUrl);
+        const isLocalPath = slot.existingUrl && (slot.existingUrl.includes('api/assignments') || slot.existingUrl.startsWith('/'));
+        const localFile = getMediaFileLocally('assignments', asg.id, slot.slotApi);
+        const hasRawData = slot.raw && slot.raw.startsWith('data:image/');
+
+        if (!isDrive && (isLocalPath || localFile || hasRawData)) {
+          let dataUri = '';
+          if (hasRawData) {
+            dataUri = slot.raw!;
+          } else if (localFile) {
+            dataUri = `data:${localFile.mimeType};base64,${localFile.buffer.toString('base64')}`;
+          }
+
+          if (dataUri) {
+            const driveUrl = await uploadPhotoToGoogleDriveBackend({
+              suratTugas: asg.noPenugasan || asg.id,
+              fileName: `${asg.noPenugasan || asg.id}_${slot.name}.jpg`,
+              base64Data: dataUri,
+              category: 'assignments',
+              entityId: asg.id,
+              slot: slot.slotApi,
+            });
+
+            if (driveUrl) {
+              asg.driveMedia = {
+                ...(asg.driveMedia || {}),
+                [slot.key]: driveUrl,
+              };
+              deleteMediaFileLocally('assignments', asg.id, slot.slotApi);
+              asgUpdated = true;
+              syncedCount += 1;
+            } else {
+              failedCount += 1;
+            }
+          }
+        }
+      }
+
+      if (asgUpdated) {
+        asg.needsSheetSync = true;
+        updatedAssignments.push(asg.id);
+      }
+    }
+
+    // 2. Scan semua struk pengeluaran BBM & Tol driver
+    for (const exp of store.driverExpenses) {
+      let expUpdated = false;
+      const bbmLocal = exp.fotoStrukBbmUrl && (exp.fotoStrukBbmUrl.includes('api/driver-expenses') || exp.fotoStrukBbmUrl.startsWith('/'));
+      const bbmLocalFile = getMediaFileLocally('expenses', exp.id, 'struk-bbm');
+      const bbmRaw = exp.fotoStrukBbm && exp.fotoStrukBbm.startsWith('data:image/');
+
+      if (!isDriveUrl(exp.fotoStrukBbmUrl) && (bbmLocal || bbmLocalFile || bbmRaw)) {
+        const dataUri = bbmRaw ? exp.fotoStrukBbm! : bbmLocalFile ? `data:${bbmLocalFile.mimeType};base64,${bbmLocalFile.buffer.toString('base64')}` : '';
+        if (dataUri) {
+          const driveUrl = await uploadPhotoToGoogleDriveBackend({
+            suratTugas: `EXP-${exp.id}`,
+            fileName: `${exp.tanggal || 'TGL'}_${exp.id}_Struk_BBM.jpg`,
+            base64Data: dataUri,
+            category: 'expenses',
+            entityId: exp.id,
+            slot: 'struk-bbm',
+          });
+          if (driveUrl) {
+            exp.fotoStrukBbmUrl = driveUrl;
+            deleteMediaFileLocally('expenses', exp.id, 'struk-bbm');
+            expUpdated = true;
+            syncedCount += 1;
+          } else {
+            failedCount += 1;
+          }
+        }
+      }
+
+      const tolLocal = exp.fotoStrukTolUrl && (exp.fotoStrukTolUrl.includes('api/driver-expenses') || exp.fotoStrukTolUrl.startsWith('/'));
+      const tolLocalFile = getMediaFileLocally('expenses', exp.id, 'struk-tol');
+      const tolRaw = exp.fotoStrukTol && exp.fotoStrukTol.startsWith('data:image/');
+
+      if (!isDriveUrl(exp.fotoStrukTolUrl) && (tolLocal || tolLocalFile || tolRaw)) {
+        const dataUri = tolRaw ? exp.fotoStrukTol! : tolLocalFile ? `data:${tolLocalFile.mimeType};base64,${tolLocalFile.buffer.toString('base64')}` : '';
+        if (dataUri) {
+          const driveUrl = await uploadPhotoToGoogleDriveBackend({
+            suratTugas: `EXP-${exp.id}`,
+            fileName: `${exp.tanggal || 'TGL'}_${exp.id}_Struk_Tol.jpg`,
+            base64Data: dataUri,
+            category: 'expenses',
+            entityId: exp.id,
+            slot: 'struk-tol',
+          });
+          if (driveUrl) {
+            exp.fotoStrukTolUrl = driveUrl;
+            deleteMediaFileLocally('expenses', exp.id, 'struk-tol');
+            expUpdated = true;
+            syncedCount += 1;
+          } else {
+            failedCount += 1;
+          }
+        }
+      }
+
+      if (expUpdated) {
+        exp.needsSheetSync = true;
+        updatedExpenses.push(exp.id);
+      }
+    }
+
+    // 3. Simpan dan perbarui link Google Drive ke Google Sheets serta broadcast real-time
+    if (updatedAssignments.length > 0 || updatedExpenses.length > 0) {
+      saveStore(store);
+      await syncAndPushStoreToSheets(0);
+      broadcastRealtime({
+        type: 'state:sync',
+        clientId: getRequestClientId(req),
+        actorRole: 'ADMIN',
+      });
+    }
+
+    res.json({
+      success: true,
+      syncedCount,
+      failedCount,
+      updatedAssignmentsCount: updatedAssignments.length,
+      updatedExpensesCount: updatedExpenses.length,
+      message: syncedCount > 0
+        ? `Berhasil memulihkan ${syncedCount} foto tertahan, mengunggah ke Google Drive, memperbarui link di Google Sheets, dan membersihkan file sementara di server.`
+        : 'Semua foto sudah tersinkron dengan Google Drive (tidak ada foto yang tertahan).',
+    });
+  });
+
   // Save Google Drive photo archive metadata & folder URLs into assignments
   app.post('/api/assignments/drive-media', (req, res) => {
     const { driveRootFolderId, driveRootFolderUrl, updates } = req.body || {};
@@ -5984,6 +6304,14 @@ function clearSecureSessionCookie(res: express.Response): void {
               existing.driveFolderUrl ||
               ''
           ).trim() || undefined;
+
+        // Hapus file sementara lokal jika URL Drive sudah ada
+        if (nextMedia?.fotoOdometerBerangkatUrl) deleteMediaFileLocally('assignments', existing.id, 'odo-berangkat');
+        if (nextMedia?.fotoSuhuBerangkatUrl) deleteMediaFileLocally('assignments', existing.id, 'suhu-berangkat');
+        if (nextMedia?.fotoOdometerSerahTerimaUrl) deleteMediaFileLocally('assignments', existing.id, 'odo-serahterima');
+        if (nextMedia?.fotoSuhuSerahTerimaUrl) deleteMediaFileLocally('assignments', existing.id, 'suhu-serahterima');
+        if (nextMedia?.fotoBuktiSerahTerimaUrl) deleteMediaFileLocally('assignments', existing.id, 'bukti-serahterima');
+        if (nextMedia?.tandaTanganPenerimaUrl) deleteMediaFileLocally('assignments', existing.id, 'ttd-penerima');
 
         store.assignments[idx] = {
           ...existing,
@@ -7165,12 +7493,48 @@ function clearSecureSessionCookie(res: express.Response): void {
     };
 
     if (fotoStrukBbm) {
-      saveMediaFileLocally('expenses', createdExpense.id, 'struk-bbm', fotoStrukBbm);
-      saveMediaFileLocally('expenses', createdExpense.id, 'bbm', fotoStrukBbm);
+      if (isDriveUrl(fotoStrukBbm) || fotoStrukBbm.startsWith('http')) {
+        createdExpense.fotoStrukBbmUrl = fotoStrukBbm;
+        deleteMediaFileLocally('expenses', createdExpense.id, 'struk-bbm');
+        deleteMediaFileLocally('expenses', createdExpense.id, 'bbm');
+      } else {
+        saveMediaFileLocally('expenses', createdExpense.id, 'struk-bbm', fotoStrukBbm);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: `EXP-${createdExpense.id}`,
+          fileName: `${createdExpense.tanggal || 'TGL'}_${createdExpense.id}_Struk_BBM.jpg`,
+          base64Data: fotoStrukBbm,
+          category: 'expenses',
+          entityId: createdExpense.id,
+          slot: 'struk-bbm',
+        });
+        if (driveUrl) {
+          createdExpense.fotoStrukBbmUrl = driveUrl;
+          deleteMediaFileLocally('expenses', createdExpense.id, 'struk-bbm');
+          deleteMediaFileLocally('expenses', createdExpense.id, 'bbm');
+        }
+      }
     }
     if (fotoStrukTol) {
-      saveMediaFileLocally('expenses', createdExpense.id, 'struk-tol', fotoStrukTol);
-      saveMediaFileLocally('expenses', createdExpense.id, 'tol', fotoStrukTol);
+      if (isDriveUrl(fotoStrukTol) || fotoStrukTol.startsWith('http')) {
+        createdExpense.fotoStrukTolUrl = fotoStrukTol;
+        deleteMediaFileLocally('expenses', createdExpense.id, 'struk-tol');
+        deleteMediaFileLocally('expenses', createdExpense.id, 'tol');
+      } else {
+        saveMediaFileLocally('expenses', createdExpense.id, 'struk-tol', fotoStrukTol);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: `EXP-${createdExpense.id}`,
+          fileName: `${createdExpense.tanggal || 'TGL'}_${createdExpense.id}_Struk_Tol.jpg`,
+          base64Data: fotoStrukTol,
+          category: 'expenses',
+          entityId: createdExpense.id,
+          slot: 'struk-tol',
+        });
+        if (driveUrl) {
+          createdExpense.fotoStrukTolUrl = driveUrl;
+          deleteMediaFileLocally('expenses', createdExpense.id, 'struk-tol');
+          deleteMediaFileLocally('expenses', createdExpense.id, 'tol');
+        }
+      }
     }
 
     removeDeletedTombstones('driverExpenses', [createdExpense.id]);
@@ -7280,14 +7644,24 @@ function clearSecureSessionCookie(res: express.Response): void {
         const idx = store.driverExpenses.findIndex((e) => e.id === expenseId);
         if (idx === -1) continue;
         const existing = store.driverExpenses[idx];
+        const finalBbmUrl =
+          String(item?.fotoStrukBbmUrl || existing.fotoStrukBbmUrl || '').trim() ||
+          undefined;
+        const finalTolUrl =
+          String(item?.fotoStrukTolUrl || existing.fotoStrukTolUrl || '').trim() ||
+          undefined;
+
+        if (finalBbmUrl && isDriveUrl(finalBbmUrl)) {
+          deleteMediaFileLocally('expenses', existing.id, 'struk-bbm');
+        }
+        if (finalTolUrl && isDriveUrl(finalTolUrl)) {
+          deleteMediaFileLocally('expenses', existing.id, 'struk-tol');
+        }
+
         store.driverExpenses[idx] = {
           ...existing,
-          fotoStrukBbmUrl:
-            String(item?.fotoStrukBbmUrl || existing.fotoStrukBbmUrl || '').trim() ||
-            undefined,
-          fotoStrukTolUrl:
-            String(item?.fotoStrukTolUrl || existing.fotoStrukTolUrl || '').trim() ||
-            undefined,
+          fotoStrukBbmUrl: finalBbmUrl,
+          fotoStrukTolUrl: finalTolUrl,
           needsSheetSync: true,
         };
         updatedExpenses.push(store.driverExpenses[idx]);
@@ -7941,23 +8315,60 @@ function clearSecureSessionCookie(res: express.Response): void {
       fotoSuhuBerangkat: isPendingin && fotoSuhuBerangkat ? fotoSuhuBerangkat : undefined,
     };
     if (fotoOdometerBerangkat) {
-      saveMediaFileLocally('assignments', assignment.id, 'odo-berangkat', fotoOdometerBerangkat);
-      saveMediaFileLocally('assignments', assignment.id, 'foto-odometer-berangkat', fotoOdometerBerangkat);
+      if (isDriveUrl(fotoOdometerBerangkat) || fotoOdometerBerangkat.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          fotoOdometerBerangkatUrl: fotoOdometerBerangkat,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'odo-berangkat');
+        deleteMediaFileLocally('assignments', assignment.id, 'foto-odometer-berangkat');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'odo-berangkat', fotoOdometerBerangkat);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_Odometer_Keberangkatan.jpg`,
+          base64Data: fotoOdometerBerangkat,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'odo-berangkat',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            fotoOdometerBerangkatUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'odo-berangkat');
+          deleteMediaFileLocally('assignments', assignment.id, 'foto-odometer-berangkat');
+        }
+      }
     }
     if (fotoSuhuBerangkat) {
-      saveMediaFileLocally('assignments', assignment.id, 'suhu-berangkat', fotoSuhuBerangkat);
-      saveMediaFileLocally('assignments', assignment.id, 'foto-suhu-berangkat', fotoSuhuBerangkat);
-    }
-    if (assignment.driveMedia && (fotoOdometerBerangkat || fotoSuhuBerangkat)) {
-      assignment.driveMedia = {
-        ...assignment.driveMedia,
-        fotoOdometerBerangkatUrl: fotoOdometerBerangkat
-          ? undefined
-          : assignment.driveMedia.fotoOdometerBerangkatUrl,
-        fotoSuhuBerangkatUrl: fotoSuhuBerangkat
-          ? undefined
-          : assignment.driveMedia.fotoSuhuBerangkatUrl,
-      };
+      if (isDriveUrl(fotoSuhuBerangkat) || fotoSuhuBerangkat.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          fotoSuhuBerangkatUrl: fotoSuhuBerangkat,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'suhu-berangkat');
+        deleteMediaFileLocally('assignments', assignment.id, 'foto-suhu-berangkat');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'suhu-berangkat', fotoSuhuBerangkat);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_Suhu_Keberangkatan.jpg`,
+          base64Data: fotoSuhuBerangkat,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'suhu-berangkat',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            fotoSuhuBerangkatUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'suhu-berangkat');
+          deleteMediaFileLocally('assignments', assignment.id, 'foto-suhu-berangkat');
+        }
+      }
     }
     assignment.needsSheetSync = true;
 
@@ -8138,26 +8549,60 @@ function clearSecureSessionCookie(res: express.Response): void {
       fotoSuhuSampai: isPendingin && fotoSuhuSampai ? fotoSuhuSampai : undefined,
     };
     if (fotoOdometerSampai) {
-      saveMediaFileLocally('assignments', assignment.id, 'odo-serahterima', fotoOdometerSampai);
-      saveMediaFileLocally('assignments', assignment.id, 'odo-sampai', fotoOdometerSampai);
+      if (isDriveUrl(fotoOdometerSampai) || fotoOdometerSampai.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          fotoOdometerSerahTerimaUrl: fotoOdometerSampai,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'odo-serahterima');
+        deleteMediaFileLocally('assignments', assignment.id, 'odo-sampai');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'odo-serahterima', fotoOdometerSampai);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_Odometer_Sampai.jpg`,
+          base64Data: fotoOdometerSampai,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'odo-serahterima',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            fotoOdometerSerahTerimaUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'odo-serahterima');
+          deleteMediaFileLocally('assignments', assignment.id, 'odo-sampai');
+        }
+      }
     }
     if (fotoSuhuSampai) {
-      saveMediaFileLocally('assignments', assignment.id, 'suhu-serahterima', fotoSuhuSampai);
-      saveMediaFileLocally('assignments', assignment.id, 'suhu-sampai', fotoSuhuSampai);
-    }
-    if (
-      assignment.driveMedia &&
-      (req.body?.fotoOdometerSampai || req.body?.fotoSuhuSampai)
-    ) {
-      assignment.driveMedia = {
-        ...assignment.driveMedia,
-        fotoOdometerSerahTerimaUrl: req.body?.fotoOdometerSampai
-          ? undefined
-          : assignment.driveMedia.fotoOdometerSerahTerimaUrl,
-        fotoSuhuSerahTerimaUrl: req.body?.fotoSuhuSampai
-          ? undefined
-          : assignment.driveMedia.fotoSuhuSerahTerimaUrl,
-      };
+      if (isDriveUrl(fotoSuhuSampai) || fotoSuhuSampai.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          fotoSuhuSerahTerimaUrl: fotoSuhuSampai,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'suhu-serahterima');
+        deleteMediaFileLocally('assignments', assignment.id, 'suhu-sampai');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'suhu-serahterima', fotoSuhuSampai);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_Suhu_Sampai.jpg`,
+          base64Data: fotoSuhuSampai,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'suhu-serahterima',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            fotoSuhuSerahTerimaUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'suhu-serahterima');
+          deleteMediaFileLocally('assignments', assignment.id, 'suhu-sampai');
+        }
+      }
     }
     assignment.needsSheetSync = true;
 
@@ -8333,41 +8778,74 @@ function clearSecureSessionCookie(res: express.Response): void {
       tandaTanganPenerima: tandaTanganPenerima || undefined,
     };
     if (fotoBuktiSerahTerima) {
-      saveMediaFileLocally('assignments', assignment.id, 'bukti-serahterima', fotoBuktiSerahTerima);
-      saveMediaFileLocally('assignments', assignment.id, 'foto-bukti-serahterima', fotoBuktiSerahTerima);
+      if (isDriveUrl(fotoBuktiSerahTerima) || fotoBuktiSerahTerima.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          fotoBuktiSerahTerimaUrl: fotoBuktiSerahTerima,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'bukti-serahterima');
+        deleteMediaFileLocally('assignments', assignment.id, 'foto-bukti-serahterima');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'bukti-serahterima', fotoBuktiSerahTerima);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_Bukti_SerahTerima.jpg`,
+          base64Data: fotoBuktiSerahTerima,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'bukti-serahterima',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            fotoBuktiSerahTerimaUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'bukti-serahterima');
+          deleteMediaFileLocally('assignments', assignment.id, 'foto-bukti-serahterima');
+        }
+      }
     }
     if (tandaTanganPenerima) {
-      saveMediaFileLocally('assignments', assignment.id, 'ttd-penerima', tandaTanganPenerima);
-      saveMediaFileLocally('assignments', assignment.id, 'tanda-tangan-penerima', tandaTanganPenerima);
+      if (isDriveUrl(tandaTanganPenerima) || tandaTanganPenerima.startsWith('http')) {
+        assignment.driveMedia = {
+          ...(assignment.driveMedia || {}),
+          tandaTanganPenerimaUrl: tandaTanganPenerima,
+        };
+        deleteMediaFileLocally('assignments', assignment.id, 'ttd-penerima');
+        deleteMediaFileLocally('assignments', assignment.id, 'tanda-tangan-penerima');
+      } else {
+        saveMediaFileLocally('assignments', assignment.id, 'ttd-penerima', tandaTanganPenerima);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: assignment.noPenugasan || assignment.id,
+          fileName: `${assignment.noPenugasan || assignment.id}_TandaTangan_Penerima.jpg`,
+          base64Data: tandaTanganPenerima,
+          category: 'assignments',
+          entityId: assignment.id,
+          slot: 'ttd-penerima',
+        });
+        if (driveUrl) {
+          assignment.driveMedia = {
+            ...(assignment.driveMedia || {}),
+            tandaTanganPenerimaUrl: driveUrl,
+          };
+          deleteMediaFileLocally('assignments', assignment.id, 'ttd-penerima');
+          deleteMediaFileLocally('assignments', assignment.id, 'tanda-tangan-penerima');
+        }
+      }
     }
-    if (fotoOdometerSerahTerima) {
-      saveMediaFileLocally('assignments', assignment.id, 'odo-serahterima', fotoOdometerSerahTerima);
-    }
-    if (fotoSuhuSerahTerima) {
-      saveMediaFileLocally('assignments', assignment.id, 'suhu-serahterima', fotoSuhuSerahTerima);
-    }
-    if (
-      assignment.driveMedia &&
-      (req.body?.fotoOdometerSerahTerima ||
-        req.body?.fotoSuhuSerahTerima ||
-        fotoBuktiSerahTerima ||
-        tandaTanganPenerima)
-    ) {
+    if (fotoOdometerSerahTerima && (isDriveUrl(fotoOdometerSerahTerima) || fotoOdometerSerahTerima.startsWith('http'))) {
       assignment.driveMedia = {
-        ...assignment.driveMedia,
-        fotoOdometerSerahTerimaUrl: req.body?.fotoOdometerSerahTerima
-          ? undefined
-          : assignment.driveMedia.fotoOdometerSerahTerimaUrl,
-        fotoSuhuSerahTerimaUrl: req.body?.fotoSuhuSerahTerima
-          ? undefined
-          : assignment.driveMedia.fotoSuhuSerahTerimaUrl,
-        fotoBuktiSerahTerimaUrl: fotoBuktiSerahTerima
-          ? undefined
-          : assignment.driveMedia.fotoBuktiSerahTerimaUrl,
-        tandaTanganPenerimaUrl: tandaTanganPenerima
-          ? undefined
-          : assignment.driveMedia.tandaTanganPenerimaUrl,
+        ...(assignment.driveMedia || {}),
+        fotoOdometerSerahTerimaUrl: fotoOdometerSerahTerima,
       };
+      deleteMediaFileLocally('assignments', assignment.id, 'odo-serahterima');
+    }
+    if (fotoSuhuSerahTerima && (isDriveUrl(fotoSuhuSerahTerima) || fotoSuhuSerahTerima.startsWith('http'))) {
+      assignment.driveMedia = {
+        ...(assignment.driveMedia || {}),
+        fotoSuhuSerahTerimaUrl: fotoSuhuSerahTerima,
+      };
+      deleteMediaFileLocally('assignments', assignment.id, 'suhu-serahterima');
     }
     assignment.needsSheetSync = true;
 
