@@ -1318,6 +1318,87 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     });
   };
 
+  const [editingExpense, setEditingExpense] = useState<DriverExpense | null>(
+    null
+  );
+  const [editExpenseTanggal, setEditExpenseTanggal] = useState<string>('');
+  const [editExpenseTujuan, setEditExpenseTujuan] = useState<string>('');
+  const [editExpensePlate, setEditExpensePlate] = useState<string>('');
+  const [editExpenseFleetCardId, setEditExpenseFleetCardId] = useState<string>('');
+  const [editExpenseFleetCardNumber, setEditExpenseFleetCardNumber] = useState<string>('');
+  const [editExpenseBbm, setEditExpenseBbm] = useState<string>('');
+  const [editExpenseBbmPhoto, setEditExpenseBbmPhoto] = useState<string>('');
+  const [editExpenseTol, setEditExpenseTol] = useState<string>('');
+  const [editExpenseTolPhoto, setEditExpenseTolPhoto] = useState<string>('');
+  const [editExpenseCatatan, setEditExpenseCatatan] = useState<string>('');
+  const [submittingEditExpense, setSubmittingEditExpense] = useState<boolean>(false);
+
+  const handleOpenEditExpense = (exp: DriverExpense) => {
+    setEditingExpense(exp);
+    setEditExpenseTanggal(
+      exp.tanggalPengiriman
+        ? exp.tanggalPengiriman.slice(0, 10)
+        : new Date().toISOString().slice(0, 10)
+    );
+    setEditExpenseTujuan(exp.tujuanPengiriman || '');
+    setEditExpensePlate(exp.plateNumber || '');
+    setEditExpenseFleetCardId(exp.fleetCardId || '');
+    setEditExpenseFleetCardNumber(exp.fleetCardNumber || '');
+    setEditExpenseBbm(String(exp.totalPengirimanBbm || 0));
+    setEditExpenseBbmPhoto(exp.fotoStrukBbm || '');
+    setEditExpenseTol(String(exp.totalPengeluaranTol || 0));
+    setEditExpenseTolPhoto(exp.fotoStrukTol || '');
+    setEditExpenseCatatan(exp.catatan || '');
+  };
+
+  const handleSaveEditedExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpense || submittingEditExpense) return;
+    setSubmittingEditExpense(true);
+    try {
+      const resp = await fetch(`/api/driver-expenses/${editingExpense.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tanggalPengiriman: editExpenseTanggal,
+          tujuanPengiriman: editExpenseTujuan,
+          plateNumber: editExpensePlate,
+          fleetCardId: editExpenseFleetCardId,
+          fleetCardNumber: editExpenseFleetCardNumber,
+          totalPengirimanBbm: Number(editExpenseBbm) || 0,
+          fotoStrukBbm: editExpenseBbmPhoto || undefined,
+          totalPengeluaranTol: Number(editExpenseTol) || 0,
+          fotoStrukTol: editExpenseTolPhoto || undefined,
+          catatan: editExpenseCatatan,
+        }),
+      });
+      const data = await resp.json();
+      if (data?.success) {
+        onNotify?.(
+          'success',
+          'Laporan Pengeluaran Diperbarui',
+          `Laporan pengeluaran ${editingExpense.id} berhasil diperbarui dan disinkronkan ke Spreadsheet.`
+        );
+        setEditingExpense(null);
+        await onManualSync();
+      } else {
+        onNotify?.(
+          'error',
+          'Gagal Memperbarui Laporan',
+          data?.error || 'Terjadi kesalahan pada server.'
+        );
+      }
+    } catch (err) {
+      onNotify?.(
+        'error',
+        'Gagal Memperbarui Laporan',
+        err instanceof Error ? err.message : 'Koneksi terputus.'
+      );
+    } finally {
+      setSubmittingEditExpense(false);
+    }
+  };
+
   const handleAdminBellSelect = (item: PortalBellNotificationItem) => {
     setActiveMenu('surat_tugas');
     setStatusFilter('ALL');
@@ -7369,34 +7450,44 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                 </div>
                               </div>
 
-                              <div className="flex justify-end pt-1">
+                              <div className="flex justify-end gap-2 pt-1">
                                 {!isReadOnlyView ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      triggerConfirm({
-                                        open: true,
-                                        title: `Hapus Laporan Pengeluaran ${exp.id}?`,
-                                        description:
-                                          'Laporan akan dihapus dan saldo kartu Fleet Card akan dikembalikan.',
-                                        details: [
-                                          `Driver      : ${exp.driverName}`,
-                                          `Pengiriman  : ${shippingDate} · ${exp.tujuanPengiriman || '-'}`,
-                                          `Nomor Kartu : ${exp.fleetCardNumber}`,
-                                          `Total       : ${formatIdrCurrency(totalVal)}`,
-                                        ],
-                                        confirmLabel: 'Hapus Laporan',
-                                        variant: 'danger',
-                                        action: async () => {
-                                          await onDeleteDriverExpense(exp.id);
-                                        },
-                                      })
-                                    }
-                                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Hapus Laporan
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditExpense(exp)}
+                                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                      <Edit3 className="h-3.5 w-3.5 text-sky-700" />
+                                      Edit Laporan
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        triggerConfirm({
+                                          open: true,
+                                          title: `Hapus Laporan Pengeluaran ${exp.id}?`,
+                                          description:
+                                            'Laporan akan dihapus dan saldo kartu Fleet Card akan dikembalikan.',
+                                          details: [
+                                            `Driver      : ${exp.driverName}`,
+                                            `Pengiriman  : ${shippingDate} · ${exp.tujuanPengiriman || '-'}`,
+                                            `Nomor Kartu : ${exp.fleetCardNumber}`,
+                                            `Total       : ${formatIdrCurrency(totalVal)}`,
+                                          ],
+                                          confirmLabel: 'Hapus Laporan',
+                                          variant: 'danger',
+                                          action: async () => {
+                                            await onDeleteDriverExpense(exp.id);
+                                          },
+                                        })
+                                      }
+                                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Hapus Laporan
+                                    </button>
+                                  </>
                                 ) : (
                                   <span className="font-mono text-xs italic text-slate-400">
                                     Mode Monitoring (Read-Only)
@@ -10303,6 +10394,196 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           onClose={() => setTimelineModalAssignment(null)}
         />
       </div>
+
+      {/* Edit Driver Expense Modal */}
+      {editingExpense && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs"
+          onClick={() => {
+            if (!submittingEditExpense) setEditingExpense(null);
+          }}
+        >
+          <div
+            className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col max-h-[92vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Edit Laporan Pengeluaran Driver · {editingExpense.id}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Perbaiki kesalahan input laporan BBM & Tol driver serta sesuaikan kartu Fleet Card.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={submittingEditExpense}
+                onClick={() => setEditingExpense(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedExpense} className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tanggal Pengiriman *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editExpenseTanggal}
+                    onChange={(e) => setEditExpenseTanggal(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:border-slate-900 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nomor Polisi Armada
+                  </label>
+                  <input
+                    type="text"
+                    value={editExpensePlate}
+                    onChange={(e) => setEditExpensePlate(e.target.value.toUpperCase())}
+                    placeholder="Contoh: B 1234 ABC"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:border-slate-900 focus:outline-none uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Tujuan Pengiriman *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editExpenseTujuan}
+                  onChange={(e) => setEditExpenseTujuan(e.target.value)}
+                  placeholder="Contoh: Depo Cikarang / Toko Maju Jaya"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:border-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nomor Kartu Fleet Card *
+                  </label>
+                  <select
+                    value={editExpenseFleetCardId}
+                    onChange={(e) => {
+                      const found = fleetCards.find((fc) => fc.id === e.target.value);
+                      if (found) {
+                        setEditExpenseFleetCardId(found.id);
+                        setEditExpenseFleetCardNumber(found.cardNumber);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:border-slate-900 focus:outline-none"
+                  >
+                    <option value="">-- Pilih Kartu Fleet Card --</option>
+                    {fleetCards.map((fc) => (
+                      <option key={fc.id} value={fc.id}>
+                        {fc.cardNumber} (Sisa Saldo: {formatIdrCurrency(fc.balance)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Nomor Kartu Terpilih
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={editExpenseFleetCardNumber}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-mono text-slate-700"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Total Pembelian BBM (Rp) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    required
+                    value={editExpenseBbm}
+                    onChange={(e) => setEditExpenseBbm(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:border-slate-900 focus:outline-none tabular-nums"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Masukkan 0 jika tidak ada pengeluaran BBM.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Total Pengeluaran Tol (Rp) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    required
+                    value={editExpenseTol}
+                    onChange={(e) => setEditExpenseTol(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:border-slate-900 focus:outline-none tabular-nums"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Masukkan 0 jika tidak ada pengeluaran Tol.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Catatan / Keterangan
+                </label>
+                <textarea
+                  rows={2}
+                  value={editExpenseCatatan}
+                  onChange={(e) => setEditExpenseCatatan(e.target.value)}
+                  placeholder="Catatan tambahan revisi..."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:border-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900">
+                <p className="font-semibold">Catatan Penting:</p>
+                <p className="mt-0.5 text-[11px]">
+                  Perubahan total nominal pengeluaran akan otomatis menyesuaikan kembali saldo kartu Fleet Card yang terpotong sebelumnya.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  disabled={submittingEditExpense}
+                  onClick={() => setEditingExpense(null)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingEditExpense}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 shadow-sm"
+                >
+                  {submittingEditExpense && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{submittingEditExpense ? 'Menyimpan Perubahan...' : 'Simpan Perubahan Laporan'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Browser Print-Friendly PDF Report Modal (Outside .no-print) */}
       <PrintableAssignmentModal

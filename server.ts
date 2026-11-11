@@ -7626,6 +7626,135 @@ function clearSecureSessionCookie(res: express.Response): void {
     });
   });
 
+  app.put('/api/driver-expenses/:id', async (req, res) => {
+    const targetId = String(req.params.id || '').trim();
+    const idx = store.driverExpenses.findIndex((e) => e.id === targetId);
+    if (idx === -1) {
+      res.status(404).json({ error: 'Data Pengeluaran Driver tidak ditemukan.' });
+      return;
+    }
+
+    const existing = store.driverExpenses[idx];
+    const {
+      tanggalPengiriman,
+      tujuanPengiriman,
+      plateNumber,
+      fleetCardId,
+      fleetCardNumber,
+      totalPengirimanBbm,
+      fotoStrukBbm,
+      totalPengeluaranTol,
+      fotoStrukTol,
+      catatan,
+    } = req.body || {};
+
+    const newBbm = Math.max(0, Math.round(Number(totalPengirimanBbm) || 0));
+    const newTol = Math.max(0, Math.round(Number(totalPengeluaranTol) || 0));
+    const newTotal = newBbm + newTol;
+    const oldTotal = existing.totalPengeluaran || ((existing.totalPengirimanBbm || 0) + (existing.totalPengeluaranTol || 0));
+
+    // Handle Fleet Card Balance difference adjustment
+    const diff = newTotal - oldTotal;
+    if (diff !== 0) {
+      const cardIdToMatch = fleetCardId || existing.fleetCardId;
+      const cardNumberToMatch = fleetCardNumber || existing.fleetCardNumber;
+      const cardIdx = store.fleetCards.findIndex(
+        (fc) =>
+          (cardIdToMatch && fc.id.toLowerCase() === cardIdToMatch.toLowerCase()) ||
+          (cardNumberToMatch &&
+            fc.cardNumber.replace(/\s+/g, '').toLowerCase() ===
+              cardNumberToMatch.replace(/\s+/g, '').toLowerCase())
+      );
+      if (cardIdx >= 0) {
+        store.fleetCards[cardIdx] = {
+          ...store.fleetCards[cardIdx],
+          balance: Math.round((Number(store.fleetCards[cardIdx].balance) || 0) - diff),
+        };
+        markMasterItemUnsynced('fleetCards', store.fleetCards[cardIdx].id);
+      }
+    }
+
+    let finalBbmUrl = existing.fotoStrukBbmUrl;
+    const rawBbmPhoto = String(fotoStrukBbm || '').trim();
+    if (rawBbmPhoto) {
+      if (isDriveUrl(rawBbmPhoto) || rawBbmPhoto.startsWith('http')) {
+        finalBbmUrl = rawBbmPhoto;
+        deleteMediaFileLocally('expenses', targetId, 'struk-bbm');
+      } else if (rawBbmPhoto.startsWith('data:image/')) {
+        saveMediaFileLocally('expenses', targetId, 'struk-bbm', rawBbmPhoto);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: `EXP-${targetId}`,
+          fileName: `${tanggalPengiriman || 'TGL'}_${targetId}_Struk_BBM.jpg`,
+          base64Data: rawBbmPhoto,
+          category: 'expenses',
+          entityId: targetId,
+          slot: 'struk-bbm',
+        });
+        if (driveUrl) {
+          finalBbmUrl = driveUrl;
+          deleteMediaFileLocally('expenses', targetId, 'struk-bbm');
+        }
+      }
+    }
+
+    let finalTolUrl = existing.fotoStrukTolUrl;
+    const rawTolPhoto = String(fotoStrukTol || '').trim();
+    if (rawTolPhoto) {
+      if (isDriveUrl(rawTolPhoto) || rawTolPhoto.startsWith('http')) {
+        finalTolUrl = rawTolPhoto;
+        deleteMediaFileLocally('expenses', targetId, 'struk-tol');
+      } else if (rawTolPhoto.startsWith('data:image/')) {
+        saveMediaFileLocally('expenses', targetId, 'struk-tol', rawTolPhoto);
+        const driveUrl = await uploadPhotoToGoogleDriveBackend({
+          suratTugas: `EXP-${targetId}`,
+          fileName: `${tanggalPengiriman || 'TGL'}_${targetId}_Struk_Tol.jpg`,
+          base64Data: rawTolPhoto,
+          category: 'expenses',
+          entityId: targetId,
+          slot: 'struk-tol',
+        });
+        if (driveUrl) {
+          finalTolUrl = driveUrl;
+          deleteMediaFileLocally('expenses', targetId, 'struk-tol');
+        }
+      }
+    }
+
+    const updatedExpense: DriverExpenseRecord = {
+      ...existing,
+      tanggalPengiriman: tanggalPengiriman ? formatDatabaseTimestamp(tanggalPengiriman) : existing.tanggalPengiriman,
+      tujuanPengiriman: tujuanPengiriman !== undefined ? String(tujuanPengiriman).trim() : existing.tujuanPengiriman,
+      plateNumber: plateNumber !== undefined ? String(plateNumber).trim().toUpperCase() : existing.plateNumber,
+      fleetCardId: fleetCardId !== undefined ? String(fleetCardId).trim().toUpperCase() : existing.fleetCardId,
+      fleetCardNumber: fleetCardNumber !== undefined ? String(fleetCardNumber).trim() : existing.fleetCardNumber,
+      totalPengirimanBbm: newBbm,
+      fotoStrukBbm: rawBbmPhoto && !rawBbmPhoto.startsWith('http') ? rawBbmPhoto : existing.fotoStrukBbm,
+      fotoStrukBbmUrl: finalBbmUrl,
+      totalPengeluaranTol: newTol,
+      fotoStrukTol: rawTolPhoto && !rawTolPhoto.startsWith('http') ? rawTolPhoto : existing.fotoStrukTol,
+      fotoStrukTolUrl: finalTolUrl,
+      totalPengeluaran: newTotal,
+      catatan: catatan !== undefined ? String(catatan).trim() : existing.catatan,
+      needsSheetSync: true,
+    };
+
+    store.driverExpenses[idx] = updatedExpense;
+    saveStore(store);
+    await syncAndPushStoreToSheets(4500);
+
+    const publicState = broadcastRealtime({
+      type: 'state:sync',
+      clientId: getRequestClientId(req),
+      actorRole: 'ADMIN',
+    });
+
+    res.json({
+      success: true,
+      expense: updatedExpense,
+      state: publicState,
+    });
+  });
+
   app.post('/api/driver-expenses/drive-media', (req, res) => {
     const { driveRootFolderId, driveRootFolderUrl, updates } = req.body || {};
 
